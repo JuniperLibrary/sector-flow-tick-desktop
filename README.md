@@ -1,17 +1,17 @@
 # 资金流向实时监控
 
 <p align="center">
-  <img src="https://img.shields.io/github/v/release/dingchuan/sector-flow-tick-desktop?label=最新版本&color=2196F3" />
-  <img src="https://img.shields.io/github/downloads/dingchuan/sector-flow-tick-desktop/total?label=总下载量&color=4CAF50" />
+  <img src="https://img.shields.io/github/v/release/JuniperLibrary/sector-flow-tick-desktop?label=最新版本&color=2196F3" />
+  <img src="https://img.shields.io/github/downloads/JuniperLibrary/sector-flow-tick-desktop/total?label=总下载量&color=4CAF50" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue" />
-  <img src="https://img.shields.io/github/license/dingchuan/sector-flow-tick-desktop?label=许可证" />
+  <img src="https://img.shields.io/github/license/JuniperLibrary/sector-flow-tick-desktop?label=许可证" />
 </p>
 
 独立的东方财富板块资金流实时监控桌面端，使用 `Electron + Vite + React` 实现，不依赖当前仓库里的 Go Web 服务。
 
 ## 下载
 
-前往 **[Releases](https://github.com/dingchuan/sector-flow-tick-desktop/releases)** 页面下载最新版本的安装包：
+前往 **[Releases](https://github.com/JuniperLibrary/sector-flow-tick-desktop/releases)** 页面下载最新版本的安装包：
 
 | 平台 | 安装包 | 说明 |
 |------|--------|------|
