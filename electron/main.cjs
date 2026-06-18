@@ -150,3 +150,7 @@ ipcMain.handle('tick:getHistory', async (_evt, name) => {
 ipcMain.handle('tick:getAllHistory', async () => {
   return collector.getAllHistory();
 });
+
+ipcMain.handle('tick:getHotSectors', async () => {
+  return require('./defaults.cjs').HOT_SECTORS;
+});

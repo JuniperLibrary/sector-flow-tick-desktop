@@ -1,4 +1,4 @@
-import type {CollectorStatus, SeriesPoint, TickConfig, TickSnapshot} from './types';
+import type {CollectorStatus, SectorType, SeriesPoint, TickConfig, TickSnapshot} from './types';
 
 declare global {
   interface Window {
@@ -14,6 +14,7 @@ declare global {
   getLatestSnapshot: () => Promise<TickSnapshot | null>;
   getHistory: (name: string) => Promise<SeriesPoint[]>;
   getAllHistory: () => Promise<Record<string, SeriesPoint[]>>;
+  getHotSectors: () => Promise<string[]>;
   onSnapshot: (cb: (snap: TickSnapshot) => void) => () => void;
   onStatus: (cb: (status: CollectorStatus) => void) => () => void;
   onConfig: (cb: (cfg: TickConfig) => void) => () => void;

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('tickApp', {
   getLatestSnapshot: () => ipcRenderer.invoke('tick:getLatestSnapshot'),
   getHistory: (name) => ipcRenderer.invoke('tick:getHistory', name),
   getAllHistory: () => ipcRenderer.invoke('tick:getAllHistory'),
+  getHotSectors: () => ipcRenderer.invoke('tick:getHotSectors'),
   onSnapshot: (cb) => {
     const handler = (_evt, payload) => cb(payload);
     ipcRenderer.on('tick:snapshot', handler);
