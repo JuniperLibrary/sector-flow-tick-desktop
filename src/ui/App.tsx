@@ -1,5 +1,6 @@
 import React from 'react';
 import type {CollectorStatus, EastmoneySector, SectorType, SeriesPoint, TickConfig, TickSnapshot} from '../types';
+import {TrendChart} from './TrendChart';
 
 // ─── Theme System ───────────────────────────────────────────────
 type ThemeVars = {
@@ -72,8 +73,8 @@ const intervalOptions = [
   {value: 300, label: '5 分钟'},
 ] as const;
 
-/** 市场最热门的 21 个板块（与 Go 后端 Top21HotSectors 保持一致） */
-const HOT_SECTORS: readonly string[] = [
+/** 市场最热门的 21 个板块 — 优先从后端获取，无桥接时使用此兜底 */
+const FALLBACK_HOT_SECTORS: readonly string[] = [
   "半导体", "AI应用", "CPO概念", "有色金属", "锂矿概念",
   "商业航天", "电池", "机器人", "创新药", "白酒",
   "消费电子", "银行", "人工智能", "云计算", "低空经济",
@@ -82,6 +83,7 @@ const HOT_SECTORS: readonly string[] = [
 
 type ViewState = {
   allSectors: string[];
+  loaded: boolean;
   sectorTypeMap: Record<string, SectorType>;
   config: TickConfig | null;
   status: CollectorStatus | null;
@@ -109,12 +111,12 @@ function formatTime(ms?: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
-function formatNet(v: number): string {
-  return `${v >= 0 ? '+' : ''}${v.toFixed(1)}亿`;
-}
-
 function formatVal(v: number): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
+}
+
+function formatNet(v: number): string {
+  return `${formatVal(v)}亿`;
 }
 
 function formatRate(v: number): string {
@@ -265,6 +267,7 @@ export const App: React.FC = () => {
   };
 
   const [state, setState] = React.useState<ViewState>({
+    loaded: false,
     allSectors: [],
     sectorTypeMap: {},
     config: null,
@@ -276,6 +279,7 @@ export const App: React.FC = () => {
   const [tableFilter, setTableFilter] = React.useState('');
   const [sortState, setSortState] = React.useState<SortState>({field: 'Net', direction: 'desc'});
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
+  const [chartSector, setChartSector] = React.useState<string | null>(null);
 
   const frozenBg = React.useMemo(() => theme === 'dark' ? '#0F172A' : '#FFFFFF', [theme]);
 
@@ -286,12 +290,13 @@ export const App: React.FC = () => {
 
     const init = async () => {
       if (!tickApp) return;
-      const [cfg, status, snap, allNames, sectorsWithType] = await Promise.all([
+      const [cfg, status, snap, allNames, sectorsWithType, hotSectors] = await Promise.all([
         tickApp.getConfig(),
         tickApp.getStatus(),
         tickApp.getLatestSnapshot(),
         tickApp.listAllSectors(),
         tickApp.listAllSectorsWithType(),
+        tickApp.getHotSectors ? tickApp.getHotSectors() : Promise.resolve([...FALLBACK_HOT_SECTORS]),
       ]);
       const allSectors = await tickApp.listSectors(cfg?.sectorType ?? 'industry');
       const sectorTypeMap: Record<string, SectorType> = {};
@@ -312,7 +317,7 @@ export const App: React.FC = () => {
           resolvedCfg = {...cfg, selectedSectors: validSelected};
           await tickApp.setConfig(resolvedCfg);
         } else if (cfg.selectedSectors.length === 0) {
-          const hotInAll = HOT_SECTORS.filter((h) => allSectors.includes(h));
+          const hotInAll = hotSectors.filter((h) => allSectors.includes(h));
           if (hotInAll.length > 0) {
             resolvedCfg = {...cfg, selectedSectors: hotInAll};
             await tickApp.setConfig(resolvedCfg);
@@ -322,6 +327,7 @@ export const App: React.FC = () => {
 
       setState((s) => ({
         ...s,
+        loaded: true,
         allSectors,
         sectorTypeMap,
         config: resolvedCfg,
@@ -344,7 +350,10 @@ export const App: React.FC = () => {
       unsubConfig = tickApp.onConfig((next) => setState((s) => ({...s, config: next})));
     };
 
-    init().catch(() => {});
+    init().catch((err) => {
+      console.error(err);
+      setState((s) => ({...s, loaded: true}));
+    });
     return () => {
       unsubSnap?.();
       unsubStatus?.();
@@ -426,11 +435,19 @@ export const App: React.FC = () => {
     if (!cfg || !tickApp) return;
     const nextCfg: TickConfig = {...cfg, sectorType: t};
     await tickApp.setConfig(nextCfg);
-    const allSectors = await tickApp.listSectors(t);
+    const [allSectors, sectorsWithType] = await Promise.all([
+      tickApp.listSectors(t),
+      tickApp.listAllSectorsWithType(),
+    ]);
+    const sectorTypeMap: Record<string, SectorType> = {};
+    for (const {name, sectorType} of sectorsWithType) {
+      sectorTypeMap[name] = sectorType;
+    }
     setState((s) => ({
       ...s,
       config: nextCfg,
       allSectors,
+      sectorTypeMap,
     }));
   };
 
@@ -651,7 +668,24 @@ export const App: React.FC = () => {
 
             <div style={{flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
               <div style={{fontSize: 12, color: C.textSec}}>采集板块（{cfg ? sectorTypeLabel(cfg.sectorType) : '—'}）</div>
-              <div style={{fontSize: 12, color: C.textSec}}>{cfg ? `${cfg.selectedSectors.length} 已选` : '—'}</div>
+              <div style={{fontSize: 12, color: C.textSec, display: 'flex', gap: 8, alignItems: 'center'}}>
+                <span style={{color: C.textSec}}>{cfg ? `${cfg.selectedSectors.length} 已选` : '—'}</span>
+                {cfg && tickApp ? (
+                  <>
+                    <span onClick={() => {
+                      const all = state.allSectors;
+                      const nextCfg = {...cfg, selectedSectors: Array.from(all)};
+                      tickApp.setConfig(nextCfg);
+                      setState((s) => ({...s, config: nextCfg}));
+                    }} style={{cursor: 'pointer', color: C.cyan}} title="全选当前板块类型下所有板块">全选</span>
+                    <span onClick={() => {
+                      const nextCfg = {...cfg, selectedSectors: []};
+                      tickApp.setConfig(nextCfg);
+                      setState((s) => ({...s, config: nextCfg}));
+                    }} style={{cursor: 'pointer', color: C.textSec}} title="清空所有已选板块">清空</span>
+                  </>
+                ) : null}
+              </div>
             </div>
             <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="筛选板块..." style={{...inputStyle, marginBottom: 10, flexShrink: 0}} />
             <div style={{maxHeight: 200, overflowY: 'auto', flexShrink: 0, display: 'grid', gap: 5, paddingRight: 4}}>
@@ -684,61 +718,122 @@ export const App: React.FC = () => {
                 <div style={{flexShrink: 0, fontSize: 11, color: C.textMuted, marginBottom: 8, letterSpacing: '0.04em'}}>
                   已选板块 · {cfg.selectedSectors.length}
                 </div>
-                <div style={{flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4}}>
-                  {sectorGroups.map(({type, names}) => (
-                    <div key={type} style={{marginBottom: 10}}>
-                      <div style={{fontSize: 10, color: C.textMuted, letterSpacing: '0.04em', marginBottom: 6, padding: '0 2px'}}>
-                        {sectorTypeLabel(type)} · {names.length}
-                      </div>
-                      <div style={{display: 'flex', flexWrap: 'wrap', gap: 5}}>
-                        {names.map((name) => {
-                          const t = sectorTypeMap[name];
-                          const chipColor = t === 'concept' ? C.purple : t === 'region' ? C.teal : C.cyan;
-                          const chipBg = t === 'concept' || t === 'region' ? `${chipColor}18` : `${chipColor}12`;
-                          return (
-                            <div
-                              key={name}
-                              style={{
-                                display: 'inline-flex',
-                                alignItems: 'center',
-                                gap: 3,
-                                fontSize: 12,
-                                padding: '3px 7px',
-                                borderRadius: 6,
-                                border: `1px solid ${chipColor}33`,
-                                background: chipBg,
-                                color: chipColor,
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              <span>{name}</span>
-                              <button
-                                onClick={() => onToggleSector(name)}
+                <div style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
+                  <div style={{flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4}}>
+                    {sectorGroups.map(({type, names}) => (
+                      <div key={type} style={{marginBottom: 10}}>
+                        <div style={{fontSize: 10, color: C.textMuted, letterSpacing: '0.04em', marginBottom: 6, padding: '0 2px'}}>
+                          {sectorTypeLabel(type)} · {names.length}
+                        </div>
+                        <div style={{display: 'flex', flexWrap: 'wrap', gap: 5}}>
+                          {names.map((name) => {
+                            const t = sectorTypeMap[name];
+                            const chipColor = t === 'concept' ? C.purple : t === 'region' ? C.teal : C.cyan;
+                            const chipBg = t === 'concept' || t === 'region' ? `${chipColor}18` : `${chipColor}12`;
+  if (!state.loaded) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: C.bgRoot,
+        color: C.textSec,
+        fontFamily: C.fontSans,
+        flexDirection: 'column',
+        gap: 16,
+      }}>
+        <div style={{
+          width: 28, height: 28,
+          border: `3px solid ${C.cyan}33`,
+          borderTopColor: C.cyan,
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <div style={{fontSize: 13}}>正在连接采集服务…</div>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
+      </div>
+    );
+  }
+
+  return (
+                              <div
+                                key={name}
                                 style={{
-                                  background: 'transparent',
-                                  border: 'none',
-                                  padding: 0,
-                                  width: 14,
-                                  height: 14,
-                                  borderRadius: 4,
-                                  display: 'flex',
+                                  display: 'inline-flex',
                                   alignItems: 'center',
-                                  justifyContent: 'center',
-                                  cursor: 'pointer',
-                                  color: C.textMuted,
+                                  gap: 3,
                                   fontSize: 12,
-                                  lineHeight: 1,
-                                  transition: C.transition,
+                                  padding: '3px 7px',
+                                  borderRadius: 6,
+                                  border: `1px solid ${chipColor}33`,
+                                  background: chipBg,
+                                  color: chipColor,
+                                  whiteSpace: 'nowrap',
                                 }}
                               >
-                                ×
-                              </button>
-                            </div>
-                          );
-                        })}
+                                <span
+                                onClick={() => setChartSector(name)}
+                                style={{cursor: 'pointer'}}
+                                title="查看走势"
+                              >{name}</span>
+                                <button
+                                  onClick={() => onToggleSector(name)}
+                                  style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    padding: 0,
+                                    width: 14,
+                                    height: 14,
+                                    borderRadius: 4,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    cursor: 'pointer',
+                                    color: C.textMuted,
+                                    fontSize: 12,
+                                    lineHeight: 1,
+                                    transition: C.transition,
+                                  }}
+                                >
+                                  ×
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+
+                  {chartSector && (() => {
+                    const series = state.seriesBySector[chartSector];
+                    const sectorData = snapshot?.sectors.find((s) => s.name === chartSector);
+                    if (!series || series.length === 0) return null;
+                    return (
+                      <div style={{flexShrink: 0, borderTop: C.border, marginTop: 8, paddingTop: 10}}>
+                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
+                          <div style={{fontSize: 12, fontWeight: 600, color: C.text}}>{chartSector}</div>
+                          <button
+                            onClick={() => setChartSector(null)}
+                            style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
+                          >×</button>
+                        </div>
+                        <div style={{height: 140}}>
+                          <TrendChart series={series} viewWidth={300} viewHeight={140} />
+                        </div>
+                        {sectorData && (
+                          <div style={{display: 'flex', gap: 12, fontSize: 11, color: C.textSec, marginTop: 4}}>
+                            <span>净流入: <span style={{color: sectorData.net >= 0 ? C.red : C.green, fontWeight: 600, fontFamily: C.fontMono}}>{formatNet(sectorData.net)}</span></span>
+                            <span>主力净占比: <span style={{fontWeight: 600, fontFamily: C.fontMono}}>{formatRate(sectorData.rate)}</span></span>
+                            <span>换手率: <span style={{fontWeight: 600, fontFamily: C.fontMono}}>{formatRatio(sectorData.turnoverRate)}%</span></span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}

@@ -40,7 +40,7 @@ class TickCollector {
     if (this._timer) return;
     const cfg = this._getConfig();
     this._timer = setInterval(() => {
-      this.collectOnce().catch(() => {});
+      this.collectOnce().catch((err) => console.error('[collector] interval collectOnce failed:', err));
     }, Math.max(1, cfg.intervalSec) * 1000);
     await this.collectOnce();
     this._onStatus(this.getStatus());
@@ -101,12 +101,12 @@ class TickCollector {
     const status = this.getStatus();
     if (status.state === 'running') {
       this._onStatus(status);
-      this.collectOnce().catch(() => {});
+      this.collectOnce().catch((err) => console.error('[collector] notifyConfigChanged collectOnce failed:', err));
       return;
     }
     const cfg = this._getConfig();
     if (cfg.selectedSectors.length > 0) {
-      this.start().catch(() => {});
+        this.start().catch((err) => console.error('[collector] restart (no timer) start failed:', err));
     } else {
       this._onStatus(status);
     }
@@ -117,13 +117,13 @@ class TickCollector {
     if (!this._timer) {
       const cfg = this._getConfig();
       if (cfg.selectedSectors.length > 0) {
-        this.start().catch(() => {});
+        this.start().catch((err) => console.error('[collector] restart (no timer) start failed:', err));
       }
       return;
     }
     clearInterval(this._timer);
     this._timer = null;
-    this.start().catch(() => {});
+    this.start().catch((err) => console.error('[collector] restart (with timer) start failed:', err));
   }
 }
 
