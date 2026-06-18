@@ -1,5 +1,7 @@
 import React from 'react';
-import type {CollectorStatus, EastmoneySector, SectorType, SeriesPoint, TickConfig, TickSnapshot} from '../types';
+import type {SectorType, SeriesPoint, TickConfig} from '../types';
+import type {EastmoneySector, TickSnapshot, CollectorStatus} from '../types';
+import * as api from '../api';
 import {TrendChart} from './TrendChart';
 
 // ─── Theme System ───────────────────────────────────────────────
@@ -213,7 +215,7 @@ function sortRows(rows: SectorRow[], sortState: SortState): SectorRow[] {
       case 'DownCount':
         return row.latest.downCount;
       case 'UpDownDiff':
-        return row.latest.upDownDiff;
+        return row.latest.upCount - row.latest.downCount;
       case 'LeaderChangePct':
         return row.latest.leaderChangePct;
       default:
@@ -229,8 +231,6 @@ function sortRows(rows: SectorRow[], sortState: SortState): SectorRow[] {
 }
 
 export const App: React.FC = () => {
-  const tickApp = typeof window !== 'undefined' ? window.tickApp : undefined;
-  const bridgeMissing = !tickApp;
   const [theme, setTheme] = React.useState<'dark' | 'light'>('light');
   const C = theme === 'dark' ? darkTheme : lightTheme;
 
@@ -289,38 +289,36 @@ export const App: React.FC = () => {
     let unsubConfig: (() => void) | null = null;
 
     const init = async () => {
-      if (!tickApp) return;
-      const [cfg, status, snap, allNames, sectorsWithType, hotSectors] = await Promise.all([
-        tickApp.getConfig(),
-        tickApp.getStatus(),
-        tickApp.getLatestSnapshot(),
-        tickApp.listAllSectors(),
-        tickApp.listAllSectorsWithType(),
-        tickApp.getHotSectors ? tickApp.getHotSectors() : Promise.resolve([...FALLBACK_HOT_SECTORS]),
+      const [cfg, status, snap, sectorsWithType, hotSectors] = await Promise.all([
+        api.getConfig(),
+        api.getCollectorStatus(),
+        api.getLatestSnapshot(),
+        api.listAllSectorsWithType(),
+        api.getHotSectors(),
       ]);
-      const allSectors = await tickApp.listSectors(cfg?.sectorType ?? 'industry');
+      const allSectors = await api.listSectors(cfg?.sectorType ?? 'industry');
       const sectorTypeMap: Record<string, SectorType> = {};
       for (const {name, sectorType} of sectorsWithType) {
         sectorTypeMap[name] = sectorType;
       }
 
-      let initialSeries = {};
+      let initialSeries: Record<string, SeriesPoint[]> = {};
       if (snap) {
         initialSeries = mergeSnapshotSeries(initialSeries, snap);
       }
 
       let resolvedCfg = cfg;
       if (cfg) {
-        const allow = new Set(allNames);
+        const allow = new Set(allSectors);
         const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
         if (validSelected.length !== cfg.selectedSectors.length) {
           resolvedCfg = {...cfg, selectedSectors: validSelected};
-          await tickApp.setConfig(resolvedCfg);
+          await api.setConfig(resolvedCfg);
         } else if (cfg.selectedSectors.length === 0) {
           const hotInAll = hotSectors.filter((h) => allSectors.includes(h));
           if (hotInAll.length > 0) {
             resolvedCfg = {...cfg, selectedSectors: hotInAll};
-            await tickApp.setConfig(resolvedCfg);
+            await api.setConfig(resolvedCfg);
           }
         }
       }
@@ -336,7 +334,7 @@ export const App: React.FC = () => {
         seriesBySector: initialSeries,
       }));
 
-      unsubSnap = tickApp.onSnapshot((next) => {
+      unsubSnap = await api.onSnapshot((next) => {
         setState((s) => {
           const nextSeries = mergeSnapshotSeries(s.seriesBySector, next);
           return {
@@ -346,8 +344,8 @@ export const App: React.FC = () => {
           };
         });
       });
-      unsubStatus = tickApp.onStatus((next) => setState((s) => ({...s, status: next})));
-      unsubConfig = tickApp.onConfig((next) => setState((s) => ({...s, config: next})));
+      unsubStatus = await api.onStatus((next) => setState((s) => ({...s, status: next})));
+      unsubConfig = await api.onConfig((next) => setState((s) => ({...s, config: next})));
     };
 
     init().catch((err) => {
@@ -359,7 +357,7 @@ export const App: React.FC = () => {
       unsubStatus?.();
       unsubConfig?.();
     };
-  }, [tickApp]);
+  }, []);
 
   const cfg = state.config;
   const status = state.status;
@@ -408,36 +406,36 @@ export const App: React.FC = () => {
     return [...filteredRows].sort((a, b) => a.latest.net - b.latest.net)[0] ?? null;
   }, [filteredRows]);
 
-  const canStart = Boolean(tickApp && cfg && cfg.selectedSectors.length > 0);
+  const canStart = Boolean(cfg && cfg.selectedSectors.length > 0);
 
   const handleSort = (field: SortField) => {
     setSortState((s) => (s.field === field ? {field, direction: s.direction === 'asc' ? 'desc' : 'asc'} : {field, direction: 'desc'}));
   };
 
   const onToggleSector = async (name: string) => {
-    if (!cfg || !tickApp) return;
+    if (!cfg) return;
     const nextSet = new Set(cfg.selectedSectors);
     if (nextSet.has(name)) nextSet.delete(name);
     else nextSet.add(name);
     const nextCfg: TickConfig = {...cfg, selectedSectors: Array.from(nextSet)};
-    await tickApp.setConfig(nextCfg);
+    await api.setConfig(nextCfg);
     setState((s) => ({...s, config: nextCfg}));
   };
 
   const onIntervalChange = async (v: number) => {
-    if (!cfg || !tickApp) return;
+    if (!cfg) return;
     const nextCfg: TickConfig = {...cfg, intervalSec: normalizeIntervalSec(v)};
-    await tickApp.setConfig(nextCfg);
+    await api.setConfig(nextCfg);
     setState((s) => ({...s, config: nextCfg}));
   };
 
   const onSectorTypeChange = async (t: SectorType) => {
-    if (!cfg || !tickApp) return;
+    if (!cfg) return;
     const nextCfg: TickConfig = {...cfg, sectorType: t};
-    await tickApp.setConfig(nextCfg);
+    await api.setConfig(nextCfg);
     const [allSectors, sectorsWithType] = await Promise.all([
-      tickApp.listSectors(t),
-      tickApp.listAllSectorsWithType(),
+      api.listSectors(t),
+      api.listAllSectorsWithType(),
     ]);
     const sectorTypeMap: Record<string, SectorType> = {};
     for (const {name, sectorType} of sectorsWithType) {
@@ -452,16 +450,15 @@ export const App: React.FC = () => {
   };
 
   const onStart = async () => {
-    if (!canStart || !tickApp) return;
-    await tickApp.start();
-    const next = await tickApp.getStatus();
+    if (!canStart) return;
+    await api.startCollection();
+    const next = await api.getCollectorStatus();
     setState((s) => ({...s, status: next}));
   };
 
   const onStop = async () => {
-    if (!tickApp) return;
-    await tickApp.stop();
-    const next = await tickApp.getStatus();
+    await api.stopCollection();
+    const next = await api.getCollectorStatus();
     setState((s) => ({...s, status: next}));
   };
 
@@ -562,24 +559,6 @@ export const App: React.FC = () => {
               <div style={{fontSize: 12, color: C.textMuted}}>快照 {formatTime(snapshot?.at)}</div>
             </div>
 
-            {bridgeMissing && (
-              <div
-                style={{
-                  flexShrink: 0,
-                  marginBottom: 12,
-                  padding: '10px 12px',
-                  borderRadius: C.radiusXs,
-                  border: `1px solid ${C.yellow}33`,
-                  background: `${C.yellow}08`,
-                  color: C.yellow,
-                  fontSize: 12,
-                  lineHeight: 1.5,
-                }}
-              >
-                当前页面运行在普通浏览器中，没有 Electron 桥接对象。请使用 <code style={{color: C.cyan}}>npm run dev</code> 启动桌面端。
-              </div>
-            )}
-
             <div style={{display: 'flex', gap: 10, marginBottom: 14, flexShrink: 0}}>
               <button
                 onClick={onStart}
@@ -628,7 +607,7 @@ export const App: React.FC = () => {
               {[
                 {label: '状态', value: status?.state ?? '—', tone: status?.state === 'running' ? C.cyan : C.textSec},
                 {label: '频率', value: cfg ? intervalOptions.find((i) => i.value === cfg.intervalSec)?.label ?? `${cfg.intervalSec}s` : '—', tone: C.purple},
-                {label: '最近采集', value: formatTime(status?.state === 'running' ? status.lastAt : snapshot?.at), tone: C.teal},
+                {label: '最近采集', value: formatTime(status?.lastAt ?? snapshot?.at ?? undefined), tone: C.teal},
                 {label: '已选板块', value: cfg ? `${cfg.selectedSectors.length}` : '—', tone: C.yellow},
               ].map((item) => (
                 <div key={item.label} style={{borderRadius: C.radiusSm, border: C.border, background: theme === 'dark' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.50)', padding: '11px 12px'}}>
@@ -670,17 +649,17 @@ export const App: React.FC = () => {
               <div style={{fontSize: 12, color: C.textSec}}>采集板块（{cfg ? sectorTypeLabel(cfg.sectorType) : '—'}）</div>
               <div style={{fontSize: 12, color: C.textSec, display: 'flex', gap: 8, alignItems: 'center'}}>
                 <span style={{color: C.textSec}}>{cfg ? `${cfg.selectedSectors.length} 已选` : '—'}</span>
-                {cfg && tickApp ? (
+                {cfg ? (
                   <>
                     <span onClick={() => {
                       const all = state.allSectors;
                       const nextCfg = {...cfg, selectedSectors: Array.from(all)};
-                      tickApp.setConfig(nextCfg);
+                      api.setConfig(nextCfg);
                       setState((s) => ({...s, config: nextCfg}));
                     }} style={{cursor: 'pointer', color: C.cyan}} title="全选当前板块类型下所有板块">全选</span>
                     <span onClick={() => {
                       const nextCfg = {...cfg, selectedSectors: []};
-                      tickApp.setConfig(nextCfg);
+                      api.setConfig(nextCfg);
                       setState((s) => ({...s, config: nextCfg}));
                     }} style={{cursor: 'pointer', color: C.textSec}} title="清空所有已选板块">清空</span>
                   </>
@@ -1137,8 +1116,8 @@ export const App: React.FC = () => {
                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.green, fontFamily: C.fontMono, fontSize: 13}}>
                               {formatCount(row.latest.downCount)}
                             </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.upDownDiff), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatDiff(row.latest.upDownDiff)}
+                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.upCount - row.latest.downCount), fontFamily: C.fontMono, fontSize: 13}}>
+                              {formatDiff(row.latest.upCount - row.latest.downCount)}
                             </td>
                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.text, fontFamily: C.fontSans, fontSize: 12, whiteSpace: 'nowrap'}}>
                               {row.latest.leaderStock || '—'}

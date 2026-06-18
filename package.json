@@ -4,49 +4,25 @@
   "version": "0.2.0",
   "description": "独立的东方财富板块资金流实时监控桌面端",
   "author": "JuniperLibrary",
-  "main": "electron/main.cjs",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.mjs",
+    "dev": "tauri dev",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "dist": "npm run build && electron-builder --publish=never"
+    "dist": "tauri build",
+    "preview": "vite preview"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.11.2",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
-    "electron": "^30.0.8",
-    "electron-builder": "^24.13.3",
     "typescript": "^5.5.4",
-    "vite": "^5.4.2",
-    "wait-on": "^7.2.0"
-  },
-  "build": {
-    "appId": "com.ashareflow.sectorflowtick",
-    "productName": "资金流向实时监控",
-    "files": [
-      "dist/**",
-      "electron/**",
-      "package.json"
-    ],
-    "directories": {
-      "buildResources": "build",
-      "output": "release"
-    },
-    "mac": {
-      "target": [
-        "dmg"
-      ]
-    },
-    "win": {
-      "target": [
-        "nsis"
-      ]
-    }
+    "vite": "^5.4.2"
   }
 }

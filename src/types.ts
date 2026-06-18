@@ -1,3 +1,5 @@
+export type SectorType = 'industry' | 'concept' | 'region';
+
 export type EastmoneySector = {
   name: string;
   bkCode: string;
@@ -19,10 +21,8 @@ export type EastmoneySector = {
   net10d: number;
   upCount: number;
   downCount: number;
-  upDownDiff: number;
   leaderStock: string;
   leaderChangePct: number;
-  at: number;
 };
 
 export type TickSnapshot = {
@@ -32,14 +32,28 @@ export type TickSnapshot = {
 
 export type SeriesPoint = {t: number; v: number};
 
-export type CollectorStatus =
-  | {state: 'idle'}
-  | {state: 'running'; intervalSec: number; lastAt?: number; lastError?: string};
-
-export type SectorType = 'industry' | 'concept' | 'region';
+export type CollectorStatus = {
+  state: string;
+  intervalSec: number;
+  lastAt?: number | null;
+  lastError?: string | null;
+};
 
 export type TickConfig = {
   intervalSec: number;
   selectedSectors: string[];
   sectorType: SectorType;
+};
+
+export type SectorWithType = {
+  name: string;
+  sectorType: SectorType;
+};
+
+export type InitialData = {
+  config: TickConfig;
+  status: CollectorStatus;
+  snapshot: TickSnapshot | null;
+  hot_sectors: string[];
+  sectors_with_type: SectorWithType[];
 };
