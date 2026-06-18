@@ -1,5 +1,6 @@
 node_modules/
 dist/
 release/
+.sisyphus/
 *.log
 .DS_Store
