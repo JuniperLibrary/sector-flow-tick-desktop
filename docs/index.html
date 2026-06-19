@@ -228,11 +228,12 @@
 <div class="hero">
   <div class="hero-icon">📊</div>
   <h1>资金流向实时监控</h1>
-  <p>独立的东方财富板块资金流实时监控桌面端，采集行业/概念/地域板块资金数据，支持走势图、表格排序、自定义采集板块。</p>
+  <p>基于 Tauri v2 + Rust 的桌面端（4.3 MB），采集行业/概念/地域板块资金数据，支持走势图、表格排序、自定义采集板块。</p>
   <div class="hero-badges">
     <img src="https://img.shields.io/github/v/release/JuniperLibrary/sector-flow-tick-desktop?label=最新版本&color=2196F3" alt="最新版本">
     <img src="https://img.shields.io/github/downloads/JuniperLibrary/sector-flow-tick-desktop/total?label=总下载量&color=4CAF50" alt="下载量">
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue" alt="平台">
+    <img src="https://img.shields.io/badge/bundle-4.3%20MB-22c55e" alt="安装包大小">
     <img src="https://img.shields.io/github/license/JuniperLibrary/sector-flow-tick-desktop?label=许可证" alt="许可证">
   </div>
   <div class="download-row">
@@ -259,7 +260,7 @@
 <!-- About -->
 <section>
   <h2 class="section-title">关于</h2>
-  <p class="section-sub">Sector Flow Tick 是一个基于 Electron 的桌面应用，直接请求东方财富板块资金流接口，提供实时资金流向监控、板块排行榜、走势图等功能。无需后端服务，开箱即用。</p>
+  <p class="section-sub">Sector Flow Tick 是一个基于 Tauri v2 的桌面应用，直接请求东方财富板块资金流接口，提供实时资金流向监控、板块排行榜、走势图等功能。无需后端服务，开箱即用。安装包仅 4.3 MB，相比 Electron 版缩小 95%。</p>
 
   <div class="screenshot">
     <img src="screenshot.png" alt="资金流向实时监控截图" style="width:100%;border-radius:12px;border:1px solid var(--border);display:block">
@@ -349,11 +350,11 @@
   <h2 class="section-title">技术栈</h2>
   <p class="section-sub">项目采用的技术和工具</p>
   <div style="display:flex;gap:12px;flex-wrap:wrap">
-    <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">Electron 30</span>
+    <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">Tauri v2</span>
+    <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">Rust</span>
     <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">React 18</span>
     <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">TypeScript</span>
     <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">Vite</span>
-    <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">electron-builder</span>
     <span class="tag" style="font-size:13px;padding:4px 12px;background:var(--bg-card);color:var(--text)">GitHub Actions</span>
   </div>
 </section>
