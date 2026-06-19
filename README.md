@@ -5,9 +5,12 @@
   <img src="https://img.shields.io/github/downloads/JuniperLibrary/sector-flow-tick-desktop/total?label=总下载量&color=4CAF50" />
   <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS-blue" />
   <img src="https://img.shields.io/github/license/JuniperLibrary/sector-flow-tick-desktop?label=许可证" />
+  <img src="https://img.shields.io/badge/bundle-4.3%20MB-22c55e" />
 </p>
 
-独立的东方财富板块资金流实时监控桌面端，使用 `Electron + Vite + React` 实现，不依赖当前仓库里的 Go Web 服务。
+独立的东方财富板块资金流实时监控桌面端，使用 `Tauri v2 + Rust + Vite + React` 实现，不依赖当前仓库里的 Go Web 服务。
+
+安装包仅 **4.3 MB**（相比 Electron 版 91 MB 缩小 95%），使用系统原生 WebView 渲染，内存占用更低。
 
 ## 下载
 
@@ -27,7 +30,7 @@
   - 行业板块
   - 概念板块
   - 地域板块
-- 支持从东方财富返回的当前板块类型全集中勾选“自定义采集板块”
+- 支持从东方财富返回的当前板块类型全集中勾选"自定义采集板块"
 - 只支持 1 分钟 / 3 分钟 / 5 分钟三种采集频率档位
 - 支持开始 / 暂停采集
 - 支持展示：
@@ -41,19 +44,25 @@
 
 ## 目录
 
-- `electron/`
-  - `main.cjs` Electron 主进程
-  - `preload.cjs` preload 桥接
-  - `collector.cjs` 采集器
-  - `eastmoney.cjs` 东方财富接口请求与解析
-  - `config.cjs` 本地配置持久化
-- `src/`
+- `src-tauri/` — Rust 后端
+  - `src/lib.rs` IPC 命令注册（13 个命令）
+  - `src/collector.rs` 定时采集器
+  - `src/eastmoney.rs` 东方财富接口请求与解析
+  - `src/config.rs` 本地配置持久化
+  - `src/models.rs` 共享数据模型
+- `src/` — React 前端
   - `ui/App.tsx` 主界面
+  - `api.ts` Tauri invoke/listen 封装层
   - `main.tsx` 渲染入口
-  - `types.ts` 前后端共享类型
-- `scripts/dev.mjs` 本地开发启动脚本
+  - `types.ts` TypeScript 类型定义
 
 ## 开发
+
+### 前置要求
+
+- [Rust](https://www.rust-lang.org/tools/install)（`cargo` 1.77+）
+- Node.js 20+
+- macOS 用户：Xcode Command Line Tools
 
 ```bash
 cd sector-flow-tick-desktop
@@ -63,8 +72,8 @@ npm run dev
 
 开发模式会同时启动：
 
-- Vite 前端开发服务器
-- Electron 桌面窗口
+- Vite 前端开发服务器（http://localhost:5173）
+- Tauri 桌面窗口（使用系统 WebView）
 
 ## 构建
 
@@ -82,19 +91,19 @@ cd sector-flow-tick-desktop
 npm run dist
 ```
 
-默认配置：
+产物输出到 `src-tauri/target/release/bundle/`：
 
 - macOS: `dmg`
 - Windows: `nsis`
 
-说明：
-
-- 建议在对应操作系统上打对应平台安装包
-- Windows 安装包建议在 Windows 环境执行 `npm run dist`
-
 ## 配置说明
 
-应用配置会保存在 Electron `userData` 目录下的 `tick-config.json`。
+应用配置会保存在 Tauri `app_config_dir` 目录下的 `tick-config.json`。
+
+| 平台 | 配置路径 |
+|------|---------|
+| macOS | `~/Library/Application Support/com.ashareflow.sector-flow-tick/tick-config.json` |
+| Windows | `%APPDATA%/com.ashareflow.sector-flow-tick/tick-config.json` |
 
 当前配置字段：
 
