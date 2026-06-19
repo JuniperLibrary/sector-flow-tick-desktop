@@ -14,9 +14,11 @@ jobs:
         include:
           - os: macos-latest
             platform: macOS
+            bundle_pattern: src-tauri/target/release/bundle/**/*.dmg
             ext: dmg
           - os: windows-latest
             platform: Windows
+            bundle_pattern: src-tauri/target/release/bundle/**/*.exe
             ext: exe
     runs-on: ${{ matrix.os }}
 
@@ -26,6 +28,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install dependencies
         run: npm ci
@@ -37,7 +42,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.platform }}
-          path: release/*.${{ matrix.ext }}
+          path: ${{ matrix.bundle_pattern }}
           if-no-files-found: error
 
   release:
@@ -61,11 +66,13 @@ jobs:
           body: |
             ## 资金流向实时监控 ${{ github.ref_name }}
 
+            基于 Tauri v2 + Rust，安装包仅 4.3 MB（相比 Electron 版缩小 95%）。
+
             请根据操作系统选择对应的安装包下载：
 
             | 平台 | 安装包 |
             |---|---|
-            | Windows | `*-Setup-*.exe` |
+            | Windows | `*.exe` |
             | macOS | `*.dmg` |
 
             ---
