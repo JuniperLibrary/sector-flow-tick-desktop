@@ -31,10 +31,15 @@ pub struct TickConfig {
     pub sector_type: SectorType,
     #[serde(default = "default_selected", rename = "selectedSectors")]
     pub selected_sectors: Vec<String>,
+    #[serde(default, rename = "alertEnabled")]
+    pub alert_enabled: bool,
+    #[serde(default = "default_alert_threshold", rename = "alertThreshold")]
+    pub alert_threshold: f64,
 }
 
 fn default_interval() -> u64 { 60 }
 fn default_sector_type() -> SectorType { SectorType::Industry }
+fn default_alert_threshold() -> f64 { 2.0 }
 fn default_selected() -> Vec<String> {
     vec![
         "半导体".into(), "AI应用".into(), "CPO概念".into(),
@@ -53,6 +58,8 @@ impl Default for TickConfig {
             interval_sec: default_interval(),
             sector_type: default_sector_type(),
             selected_sectors: default_selected(),
+            alert_enabled: false,
+            alert_threshold: default_alert_threshold(),
         }
     }
 }

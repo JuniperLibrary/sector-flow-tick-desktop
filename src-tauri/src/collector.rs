@@ -12,9 +12,6 @@ use crate::config;
 use crate::eastmoney;
 use crate::models::*;
 
-/// Net flow change threshold (亿) to trigger an alert
-const ALERT_THRESHOLD: f64 = 2.0;
-
 pub struct CollectorState {
     pub running: AtomicBool,
     pub trading_time_paused: AtomicBool,
@@ -157,25 +154,29 @@ pub fn start_collector(app: AppHandle) {
             }
 
             {
-                let mut prev_nets = state.prev_nets.lock().await;
-                for sector in &all_sectors {
-                    if let Some(&prev_net) = prev_nets.get(&sector.name) {
-                        let delta = sector.net - prev_net;
-                        if delta.abs() >= ALERT_THRESHOLD {
-                            let alert = AlertEvent {
-                                sector_name: sector.name.clone(),
-                                sector_type: sector.sector_type.clone(),
-                                delta,
-                                net: sector.net,
-                                prev_net,
-                                at: now,
-                            };
-                            log::info!("alert: {} net {:.1}→{:.1} (Δ{:.1})",
-                                sector.name, prev_net, sector.net, delta);
-                            let _ = app.emit("tick-alert", &alert);
+                let cfg = config::load_config(&app);
+                if cfg.alert_enabled {
+                    let threshold = cfg.alert_threshold;
+                    let mut prev_nets = state.prev_nets.lock().await;
+                    for sector in &all_sectors {
+                        if let Some(&prev_net) = prev_nets.get(&sector.name) {
+                            let delta = sector.net - prev_net;
+                            if delta.abs() >= threshold {
+                                let alert = AlertEvent {
+                                    sector_name: sector.name.clone(),
+                                    sector_type: sector.sector_type.clone(),
+                                    delta,
+                                    net: sector.net,
+                                    prev_net,
+                                    at: now,
+                                };
+                                log::info!("alert: {} net {:.1}→{:.1} (Δ{:.1})",
+                                    sector.name, prev_net, sector.net, delta);
+                                let _ = app.emit("tick-alert", &alert);
+                            }
                         }
+                        prev_nets.insert(sector.name.clone(), sector.net);
                     }
-                    prev_nets.insert(sector.name.clone(), sector.net);
                 }
             }
 

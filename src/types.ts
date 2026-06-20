@@ -43,6 +43,8 @@ export type TickConfig = {
   intervalSec: number;
   selectedSectors: string[];
   sectorType: SectorType;
+  alertEnabled: boolean;
+  alertThreshold: number;
 };
 
 export type SectorWithType = {

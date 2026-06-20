@@ -703,6 +703,43 @@ export const App: React.FC = () => {
               </select>
             </div>
 
+            <div style={{marginBottom: 12, flexShrink: 0}}>
+              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                <span style={labelStyle}>资金异动告警</span>
+                <div
+                  onClick={() => {
+                    const nextCfg: TickConfig = {...cfg!, alertEnabled: !cfg?.alertEnabled};
+                    api.setConfig(nextCfg);
+                    setState((s) => ({...s, config: nextCfg}));
+                  }}
+                  style={{
+                    width: 36, height: 20, borderRadius: 20, cursor: 'pointer',
+                    background: (cfg?.alertEnabled ?? false) ? C.cyan : (theme === 'dark' ? '#2A2D3A' : '#D0D5DD'),
+                    position: 'relative', transition: C.transition,
+                  }}
+                >
+                  <div style={{
+                    width: 16, height: 16, borderRadius: '50%', background: '#fff',
+                    position: 'absolute', top: 2, left: (cfg?.alertEnabled ?? false) ? 18 : 2,
+                    transition: C.transition,
+                  }} />
+                </div>
+              </div>
+              {(cfg?.alertEnabled ?? false) && (
+                <div style={{marginTop: 8, display: 'flex', alignItems: 'center', gap: 8}}>
+                  <span style={{fontSize: 12, color: C.textMuted, whiteSpace: 'nowrap'}}>阈值</span>
+                  <input type="range" min="0.5" max="5" step="0.5" value={cfg?.alertThreshold ?? 2}
+                    onChange={(e) => {
+                      const nextCfg: TickConfig = {...cfg!, alertThreshold: Number(e.target.value)};
+                      api.setConfig(nextCfg);
+                      setState((s) => ({...s, config: nextCfg}));
+                    }}
+                    style={{flex: 1, accentColor: C.cyan}} />
+                  <span style={{fontSize: 12, color: C.textSec, fontFamily: C.fontMono, minWidth: 36, textAlign: 'right'}}>{(cfg?.alertThreshold ?? 2).toFixed(1)}亿</span>
+                </div>
+              )}
+            </div>
+
             <div style={{flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
               <div style={{fontSize: 12, color: C.textSec}}>采集板块（{cfg ? sectorTypeLabel(cfg.sectorType) : '—'}）</div>
               <div style={{fontSize: 12, color: C.textSec, display: 'flex', gap: 8, alignItems: 'center'}}>
