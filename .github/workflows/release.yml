@@ -49,11 +49,17 @@ jobs:
           CARGO_NET_RETRY: 3
           ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
+      - name: Locate and flatten installer
+        run: |
+          mkdir -p _installer
+          find src-tauri/target/release/bundle -type f \( -name "*.dmg" -o -name "*.exe" \) -exec cp {} _installer/ \;
+          ls -lh _installer/
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: installer-${{ matrix.platform }}
-          path: ${{ matrix.bundle_pattern }}
+          path: _installer/*
           if-no-files-found: error
 
   release:
