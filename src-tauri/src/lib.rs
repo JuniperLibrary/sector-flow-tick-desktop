@@ -155,6 +155,19 @@ async fn stop_collection(
 }
 
 #[tauri::command]
+async fn toggle_always_on_top(
+    app: AppHandle,
+) -> Result<bool, String> {
+    if let Some(window) = app.get_webview_window("main") {
+        let new_val = !window.is_always_on_top().map_err(|e| e.to_string())?;
+        window.set_always_on_top(new_val).map_err(|e| e.to_string())?;
+        Ok(new_val)
+    } else {
+        Err("window not found".into())
+    }
+}
+
+#[tauri::command]
 async fn get_initial_data(
     app: AppHandle,
     snapshots: State<'_, collector::SnapshotsState>,
@@ -237,6 +250,7 @@ pub fn run() {
             get_hot_sectors,
             start_collection,
             stop_collection,
+            toggle_always_on_top,
             get_initial_data,
         ])
         .setup(|app| {

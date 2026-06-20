@@ -59,6 +59,10 @@ export async function getInitialData(): Promise<InitialData> {
   return invoke('get_initial_data');
 }
 
+export async function toggleAlwaysOnTop(): Promise<boolean> {
+  return invoke<boolean>('toggle_always_on_top');
+}
+
 export function onSnapshot(cb: (snap: TickSnapshot) => void): Promise<UnlistenFn> {
   return listen<TickSnapshot>('tick-snapshot', (event) => cb(event.payload));
 }

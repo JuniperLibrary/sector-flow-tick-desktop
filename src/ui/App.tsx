@@ -300,6 +300,7 @@ export const App: React.FC = () => {
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
   const [chartSector, setChartSector] = React.useState<string | null>(null);
   const [alerts, setAlerts] = React.useState<Array<AlertEvent & {id: number}>>([]);
+  const [alwaysOnTop, setAlwaysOnTop] = React.useState(false);
 
   const frozenBg = React.useMemo(() => theme === 'dark' ? '#0F172A' : '#FFFFFF', [theme]);
 
@@ -578,6 +579,26 @@ export const App: React.FC = () => {
                   ) : (
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
                   )}
+                </button>
+                <button
+                  onClick={async () => {
+                    const onTop = await api.toggleAlwaysOnTop();
+                    setAlwaysOnTop(onTop);
+                  }}
+                  style={{
+                    background: 'transparent',
+                    border: C.border,
+                    borderRadius: 8,
+                    width: 28, height: 28,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    cursor: 'pointer',
+                    color: alwaysOnTop ? C.cyan : C.textMuted,
+                    fontSize: 14, padding: 0,
+                    transition: C.transition,
+                  }}
+                  title={alwaysOnTop ? '取消置顶' : '窗口置顶'}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v7M6 12l6 6 6-6"/><path d="M6 18h12"/></svg>
                 </button>
               </div>
             </div>
