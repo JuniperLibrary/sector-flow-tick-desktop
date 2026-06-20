@@ -534,6 +534,36 @@ export const App: React.FC = () => {
     setState((s) => ({...s, status: next}));
   };
 
+  React.useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      const s = state.status;
+      if (e.key === ' ' || e.key === 'Space') {
+        e.preventDefault();
+        if (s?.state === 'running' || s?.state === 'paused') {
+          onStop().catch(() => {});
+        } else {
+          onStart().catch(() => {});
+        }
+      } else if (e.key === 'd' || e.key === 'D') {
+        setTheme((t) => t === 'dark' ? 'light' : 'dark');
+      } else if (e.key === 't' || e.key === 'T') {
+        api.toggleAlwaysOnTop().then(setAlwaysOnTop).catch(() => {});
+      } else if (e.key === '1') {
+        onSectorTypeChange('industry');
+      } else if (e.key === '2') {
+        onSectorTypeChange('concept');
+      } else if (e.key === '3') {
+        onSectorTypeChange('region');
+      } else if (e.key === 'Escape') {
+        setDetailSector(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [state.status?.state]);
+
   return (
     <div
       style={{
