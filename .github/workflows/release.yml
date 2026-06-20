@@ -50,9 +50,13 @@ jobs:
           ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
       - name: Locate and flatten installer
+        shell: bash
         run: |
           mkdir -p _installer
-          find src-tauri/target/release/bundle -type f \( -name "*.dmg" -o -name "*.exe" \) -exec cp {} _installer/ \;
+          shopt -s globstar nullglob
+          for f in src-tauri/target/release/bundle/**/*.exe src-tauri/target/release/bundle/**/*.dmg; do
+            [ -f "$f" ] && cp "$f" _installer/
+          done
           ls -lh _installer/
 
       - name: Upload installer
