@@ -227,8 +227,8 @@
 <!-- Hero -->
 <div class="hero">
   <div class="hero-icon">📊</div>
-  <h1>资金流向实时监控</h1>
-  <p>基于 Tauri v2 + Rust 的桌面端（4.3 MB），采集行业/概念/地域板块资金数据，支持走势图、表格排序、自定义采集板块。</p>
+  <h1>板块资金流实时监控</h1>
+  <p>东方财富板块资金流实时监控桌面端 · 安装包仅 4.3 MB · 无需后端服务，开箱即用</p>
   <div class="hero-badges">
     <img src="https://img.shields.io/github/v/release/JuniperLibrary/sector-flow-tick-desktop?label=最新版本&color=2196F3" alt="最新版本">
     <img src="https://img.shields.io/github/downloads/JuniperLibrary/sector-flow-tick-desktop/total?label=总下载量&color=4CAF50" alt="下载量">
@@ -259,8 +259,24 @@
 
 <!-- About -->
 <section>
-  <h2 class="section-title">关于</h2>
-  <p class="section-sub">Sector Flow Tick 是一个基于 Tauri v2 的桌面应用，直接请求东方财富板块资金流接口，提供实时资金流向监控、板块排行榜、走势图等功能。无需后端服务，开箱即用。安装包仅 4.3 MB，相比 Electron 版缩小 95%。</p>
+  <h2 class="section-title">产品介绍</h2>
+  <p class="section-sub">盯着盘面看板块资金轮动，是很多短线选手的日常。但打开网页版要忍受广告和杂乱的布局，用手机盯又不够直观。</p>
+  <p class="section-sub">本工具直接对接东方财富板块资金流接口，抓取板块资金数据并以表格/走势图展现，帮你快速判断资金在行业、概念、地域板块间的切换方向。</p>
+
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-bottom:32px">
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">🎯 短线交易者</div>
+      <div style="font-size:12px;color:var(--text-sec)">跟踪日内板块资金异动，发现主力动向</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">📊 行业研究员</div>
+      <div style="font-size:12px;color:var(--text-sec)">观察板块间资金轮动节奏</div>
+    </div>
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px">
+      <div style="font-size:13px;font-weight:600;margin-bottom:4px">⚙️ 量化爱好者</div>
+      <div style="font-size:12px;color:var(--text-sec)">作为板块资金数据的桌面采集终端</div>
+    </div>
+  </div>
 
   <div class="screenshot">
     <img src="screenshot.png" alt="资金流向实时监控截图" style="width:100%;border-radius:12px;border:1px solid var(--border);display:block">
@@ -269,38 +285,38 @@
 
 <!-- Features -->
 <section>
-  <h2 class="section-title">功能特性</h2>
+  <h2 class="section-title">核心功能</h2>
   <p class="section-sub">轻量、实时、可配置的板块资金流监控工具</p>
   <div class="features">
     <div class="feature-card">
       <div class="icon">📡</div>
       <h3>实时采集</h3>
-      <p>直接请求东方财富板块资金流接口，支持 1/3/5 分钟采集频率</p>
+      <p>直接对接东方财富板块资金流接口，1/3/5 分钟三档采集频率，自动轮询</p>
     </div>
     <div class="feature-card">
       <div class="icon">📊</div>
       <h3>板块排行</h3>
-      <p>展示最新板块快照，支持涨跌幅、净流入、换手率等多字段排序</p>
+      <p>最新资金流快照，支持涨跌幅、净流入、换手率等多字段排序，快速定位领涨/领跌板块</p>
     </div>
     <div class="feature-card">
       <div class="icon">📈</div>
-      <h3>走势简图</h3>
-      <p>点击板块查看资金流走势曲线，直观了解资金变化趋势</p>
+      <h3>资金流向简图</h3>
+      <p>选中板块的资金流走势图，直观反映资金进出节奏</p>
     </div>
     <div class="feature-card">
       <div class="icon">🎯</div>
-      <h3>自定义采集</h3>
-      <p>支持行业/概念/地域板块切换，自由勾选关注的采集板块</p>
+      <h3>自定义选板块</h3>
+      <p>支持行业 / 概念 / 地域三大板块类型一键切换，从全集中自由勾选关注的板块</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">⏯️</div>
+      <h3>采集控制</h3>
+      <p>一键开始/暂停，实时显示采集状态和接口错误提示</p>
     </div>
     <div class="feature-card">
       <div class="icon">🌙</div>
       <h3>深色模式</h3>
-      <p>跟随系统主题自动切换深色/浅色模式</p>
-    </div>
-    <div class="feature-card">
-      <div class="icon">📦</div>
-      <h3>独立运行</h3>
-      <p>纯客户端应用，不依赖后端服务，开箱即用</p>
+      <p>支持深色/浅色主题切换，盯盘更舒适</p>
     </div>
   </div>
 </section>
@@ -331,14 +347,14 @@
     <tbody>
       <tr>
         <td><strong>Windows</strong> <span class="tag" style="background:#6366F122;color:#818CF8">⊞</span></td>
-        <td><code>资金流向实时监控 Setup 0.2.1.exe</code></td>
-        <td>NSIS 安装包</td>
+        <td><code>*-Setup-*.exe</code></td>
+        <td>NSIS 安装包，双击安装后使用</td>
         <td><a class="dl-link" href="https://mirror.ghproxy.com/https://github.com/JuniperLibrary/sector-flow-tick-desktop/releases/latest" target="_blank" rel="noopener">国内加速下载 →</a></td>
       </tr>
       <tr>
         <td><strong>macOS</strong> <span class="tag" style="background:#A78BFA22;color:#C4B5FD">🍎</span></td>
-        <td><code>资金流向实时监控-0.2.1-arm64.dmg</code></td>
-        <td>Apple Silicon</td>
+        <td><code>*.dmg</code></td>
+        <td>支持 Intel &amp; Apple Silicon</td>
         <td><a class="dl-link" href="https://mirror.ghproxy.com/https://github.com/JuniperLibrary/sector-flow-tick-desktop/releases/latest" target="_blank" rel="noopener">国内加速下载 →</a></td>
       </tr>
     </tbody>
