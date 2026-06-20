@@ -121,7 +121,7 @@ pub fn start_collector(app: AppHandle) {
                 let last_at = *state.last_at.lock().await;
                 let last_error = state.last_error.lock().await.clone();
                 let status = CollectorStatus {
-                    state: "idle".into(),
+                    state: "running".into(),
                     interval_sec: cfg.interval_sec,
                     last_at,
                     last_error,

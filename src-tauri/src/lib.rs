@@ -153,7 +153,7 @@ async fn get_initial_data(
         let last_at = *state.last_at.lock().await;
         let last_error = state.last_error.lock().await.clone();
         let state_str = if state.running.load(Ordering::SeqCst) {
-            if last_error.is_some() { "error" } else { "idle" }
+        if last_error.is_some() { "error" } else { "running" }
         } else {
             "stopped"
         };
