@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use chrono::{Datelike, Timelike};
@@ -10,12 +11,16 @@ use crate::config;
 use crate::eastmoney;
 use crate::models::*;
 
+/// Net flow change threshold (亿) to trigger an alert
+const ALERT_THRESHOLD: f64 = 2.0;
+
 pub struct CollectorState {
     pub running: AtomicBool,
     pub trading_time_paused: AtomicBool,
     pub last_at: Mutex<Option<i64>>,
     pub last_error: Mutex<Option<String>>,
     pub history: Mutex<Vec<SectorSnapshot>>,
+    pub prev_nets: Mutex<HashMap<String, f64>>,
 }
 
 impl CollectorState {
@@ -26,6 +31,7 @@ impl CollectorState {
             last_at: Mutex::new(None),
             last_error: Mutex::new(None),
             history: Mutex::new(Vec::new()),
+            prev_nets: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -135,6 +141,29 @@ pub fn start_collector(app: AppHandle) {
                 if history.len() > MAX_HISTORY_SNAPSHOTS {
                     let excess = history.len() - MAX_HISTORY_SNAPSHOTS;
                     history.drain(0..excess);
+                }
+            }
+
+            {
+                let mut prev_nets = state.prev_nets.lock().await;
+                for sector in &all_sectors {
+                    if let Some(&prev_net) = prev_nets.get(&sector.name) {
+                        let delta = sector.net - prev_net;
+                        if delta.abs() >= ALERT_THRESHOLD {
+                            let alert = AlertEvent {
+                                sector_name: sector.name.clone(),
+                                sector_type: sector.sector_type.clone(),
+                                delta,
+                                net: sector.net,
+                                prev_net,
+                                at: now,
+                            };
+                            log::info!("alert: {} net {:.1}→{:.1} (Δ{:.1})",
+                                sector.name, prev_net, sector.net, delta);
+                            let _ = app.emit("tick-alert", &alert);
+                        }
+                    }
+                    prev_nets.insert(sector.name.clone(), sector.net);
                 }
             }
 

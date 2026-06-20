@@ -57,3 +57,12 @@ export type InitialData = {
   hot_sectors: string[];
   sectors_with_type: SectorWithType[];
 };
+
+export type AlertEvent = {
+  sectorName: string;
+  sectorType: SectorType;
+  delta: number;
+  net: number;
+  prevNet: number;
+  at: number;
+};

@@ -1,5 +1,5 @@
 import React from 'react';
-import type {SectorType, SeriesPoint, TickConfig} from '../types';
+import type {AlertEvent, SectorType, SeriesPoint, TickConfig} from '../types';
 import type {EastmoneySector, TickSnapshot, CollectorStatus} from '../types';
 import * as api from '../api';
 import {TrendChart} from './TrendChart';
@@ -299,6 +299,7 @@ export const App: React.FC = () => {
   const [sortState, setSortState] = React.useState<SortState>(loadSortState);
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
   const [chartSector, setChartSector] = React.useState<string | null>(null);
+  const [alerts, setAlerts] = React.useState<Array<AlertEvent & {id: number}>>([]);
 
   const frozenBg = React.useMemo(() => theme === 'dark' ? '#0F172A' : '#FFFFFF', [theme]);
 
@@ -306,6 +307,7 @@ export const App: React.FC = () => {
     let unsubSnap: (() => void) | null = null;
     let unsubStatus: (() => void) | null = null;
     let unsubConfig: (() => void) | null = null;
+    let unsubAlert: (() => void) | null = null;
 
     const init = async () => {
       const [cfg, status, snap, sectorsWithType, hotSectors] = await Promise.all([
@@ -365,6 +367,14 @@ export const App: React.FC = () => {
       });
       unsubStatus = await api.onStatus((next) => setState((s) => ({...s, status: next})));
       unsubConfig = await api.onConfig((next) => setState((s) => ({...s, config: next})));
+      let alertId = 0;
+      unsubAlert = await api.onAlert((alert) => {
+        const id = ++alertId;
+        setAlerts((prev) => [...prev, {...alert, id}].slice(-3));
+        setTimeout(() => {
+          setAlerts((prev) => prev.filter((a) => a.id !== id));
+        }, 4500);
+      });
     };
 
     init().catch((err) => {
@@ -375,6 +385,7 @@ export const App: React.FC = () => {
       unsubSnap?.();
       unsubStatus?.();
       unsubConfig?.();
+      unsubAlert?.();
     };
   }, []);
 
@@ -1162,6 +1173,46 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
+      </div>
+      <div style={{
+        position: 'fixed',
+        top: 16, right: 16,
+        zIndex: 9999,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 8,
+        pointerEvents: 'none',
+      }}>
+        {alerts.map((a) => {
+          const isInflow = a.delta >= 0;
+          return (
+            <div key={a.id} style={{
+              pointerEvents: 'auto',
+              background: theme === 'dark' ? 'rgba(15,23,42,0.95)' : 'rgba(255,255,255,0.95)',
+              border: `1px solid ${isInflow ? C.red : C.green}44`,
+              borderRadius: C.radiusSm,
+              padding: '10px 14px',
+              width: 280,
+              backdropFilter: 'blur(12px)',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+              cursor: 'pointer',
+              transition: C.transition,
+            }} onClick={() => setAlerts((prev) => prev.filter((x) => x.id !== a.id))}>
+              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4}}>
+                <span style={{fontWeight: 600, fontSize: 13, color: C.text}}>{a.sectorName}</span>
+                <span style={{fontSize: 11, color: C.textMuted}}>{formatTime(a.at)}</span>
+              </div>
+              <div style={{display: 'flex', alignItems: 'baseline', gap: 8}}>
+                <span style={{fontWeight: 700, fontSize: 15, color: isInflow ? C.red : C.green, fontFamily: C.fontMono}}>
+                  {isInflow ? '+' : ''}{a.delta.toFixed(1)}亿
+                </span>
+                <span style={{fontSize: 11, color: C.textMuted}}>
+                  净流入 {formatNet(a.net)}
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

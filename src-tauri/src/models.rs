@@ -224,3 +224,17 @@ pub struct SectorWithType {
     #[serde(rename = "sectorType")]
     pub sector_type: SectorType,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertEvent {
+    #[serde(rename = "sectorName")]
+    pub sector_name: String,
+    #[serde(rename = "sectorType")]
+    pub sector_type: SectorType,
+    pub delta: f64,
+    pub net: f64,
+    #[serde(rename = "prevNet")]
+    pub prev_net: f64,
+    pub at: i64,
+}

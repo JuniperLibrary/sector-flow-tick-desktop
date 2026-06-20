@@ -1,6 +1,7 @@
 import {invoke} from '@tauri-apps/api/core';
 import {listen, UnlistenFn} from '@tauri-apps/api/event';
 import type {
+  AlertEvent,
   CollectorStatus,
   InitialData,
   SectorType,
@@ -68,4 +69,8 @@ export function onStatus(cb: (status: CollectorStatus) => void): Promise<Unliste
 
 export function onConfig(cb: (cfg: TickConfig) => void): Promise<UnlistenFn> {
   return listen<TickConfig>('tick-config', (event) => cb(event.payload));
+}
+
+export function onAlert(cb: (alert: AlertEvent) => void): Promise<UnlistenFn> {
+  return listen<AlertEvent>('tick-alert', (event) => cb(event.payload));
 }
