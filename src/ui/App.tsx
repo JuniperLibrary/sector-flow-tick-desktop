@@ -515,7 +515,7 @@ export const App: React.FC = () => {
               <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
                 <div style={{display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textSec}}>
                   <span className="live-dot" style={{display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: status?.state === 'running' ? C.cyan : C.textMuted, boxShadow: status?.state === 'running' ? `0 0 8px ${C.cyan}` : 'none'}} />
-                  {status?.state === 'running' ? 'LIVE' : 'STANDBY'}
+                  {status?.state === 'running' ? '运行中' : '待机'}
                 </div>
                 <button
                   onClick={() => setTheme((t) => t === 'dark' ? 'light' : 'dark')}
@@ -605,7 +605,7 @@ export const App: React.FC = () => {
 
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14, flexShrink: 0}}>
               {[
-                {label: '状态', value: status?.state ?? '—', tone: status?.state === 'running' ? C.cyan : C.textSec},
+                {label: '状态', value: status?.state === 'running' ? '运行中' : status?.state === 'stopped' ? '已停止' : status?.state === 'error' ? '错误' : '—', tone: status?.state === 'running' ? C.cyan : C.textSec},
                 {label: '频率', value: cfg ? intervalOptions.find((i) => i.value === cfg.intervalSec)?.label ?? `${cfg.intervalSec}s` : '—', tone: C.purple},
                 {label: '最近采集', value: formatTime(status?.lastAt ?? snapshot?.at ?? undefined), tone: C.teal},
                 {label: '已选板块', value: cfg ? `${cfg.selectedSectors.length}` : '—', tone: C.yellow},
