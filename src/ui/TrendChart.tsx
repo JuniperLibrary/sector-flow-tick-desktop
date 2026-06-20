@@ -1,14 +1,22 @@
 import React from 'react';
 import type {SeriesPoint} from '../types';
 
+export interface MultiSeries {
+  name: string;
+  data: SeriesPoint[];
+  color: string;
+}
+
 interface TrendChartProps {
-  series: SeriesPoint[];
+  series: MultiSeries[];
   viewWidth?: number;
   viewHeight?: number;
-  colorUp?: string;
-  colorDown?: string;
-  colorFlat?: string;
 }
+
+const CHART_COLORS = [
+  '#F87171', '#4ADE80', '#60A5FA', '#FBBF24',
+  '#A78BFA', '#FB923C', '#34D399', '#38BDF8',
+];
 
 function fmtNet(v: number): string {
   if (Math.abs(v) >= 100) return `${(v / 100).toFixed(1)}亿`;
@@ -24,17 +32,14 @@ function fmtTime(ms: number): string {
 
 export const TrendChart: React.FC<TrendChartProps> = ({
   series,
-  viewWidth = 240,
-  viewHeight = 200,
-  colorUp = '#F87171',
-  colorDown = '#4ADE80',
-  colorFlat = '#64748B',
+  viewWidth = 300,
+  viewHeight = 160,
 }) => {
   const M = {left: 44, right: 4, top: 8, bottom: 28};
   const chartW = viewWidth - M.left - M.right;
   const chartH = viewHeight - M.top - M.bottom;
 
-  if (!series || series.length === 0) {
+  if (!series || series.length === 0 || series.every((s) => s.data.length === 0)) {
     return (
       <svg
         viewBox={`0 0 ${viewWidth} ${viewHeight}`}
@@ -44,9 +49,22 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     );
   }
 
-  const values = series.map((p) => p.v);
-  let dataMin = Math.min(...values);
-  let dataMax = Math.max(...values);
+  // Compute common scale across all series
+  let dataMin = Infinity;
+  let dataMax = -Infinity;
+  let maxLen = 0;
+  let allPoints: SeriesPoint[] = [];
+  for (const s of series) {
+    if (s.data.length === 0) continue;
+    maxLen = Math.max(maxLen, s.data.length);
+    for (const p of s.data) {
+      if (p.v < dataMin) dataMin = p.v;
+      if (p.v > dataMax) dataMax = p.v;
+    }
+    if (s.data.length > allPoints.length) allPoints = s.data;
+  }
+  if (dataMin === Infinity) dataMin = 0;
+  if (dataMax === -Infinity) dataMax = 0;
   if (dataMin > 0) dataMin = 0;
   if (dataMax < 0) dataMax = 0;
   const range = dataMax - dataMin;
@@ -63,9 +81,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
   const yMin = dataMin - paddedRange * pad;
   const yMax = dataMax + paddedRange * pad;
 
-  const xScale = (i: number) => {
-    if (series.length === 1) return M.left + chartW / 2;
-    return M.left + (i / (series.length - 1)) * chartW;
+  const xScale = (i: number, len: number) => {
+    if (len <= 1) return M.left + chartW / 2;
+    return M.left + (i / (len - 1)) * chartW;
   };
   const yScale = (v: number) => M.top + chartH - ((v - yMin) / (yMax - yMin)) * chartH;
 
@@ -84,26 +102,14 @@ export const TrendChart: React.FC<TrendChartProps> = ({
 
   const yTicks = niceTicks(yMin, yMax, 4);
 
-  const xTickCount = Math.min(6, series.length);
+  const xTickCount = Math.min(6, allPoints.length);
   const xTickIndices: number[] = [];
   for (let i = 0; i < xTickCount; i++) {
-    const idx = Math.round((i / (xTickCount - 1)) * (series.length - 1));
+    const idx = allPoints.length > 1 ? Math.round((i / (xTickCount - 1)) * (allPoints.length - 1)) : 0;
     xTickIndices.push(idx);
   }
 
   const zeroY = yScale(0);
-  const firstV = series[0].v;
-  const lastV = series[series.length - 1].v;
-  const delta = lastV - firstV;
-  const trendColor = delta > 0 ? colorUp : delta < 0 ? colorDown : colorFlat;
-
-  const pts = series.map((p, i) => `${xScale(i)},${yScale(p.v)}`);
-  const linePath = `M${pts.join(' L')}`;
-  const fillPath =
-    series.length > 1
-      ? `${linePath} L${xScale(series.length - 1)},${zeroY} L${xScale(0)},${zeroY} Z`
-      : '';
-
   const axisColor = '#9CA3AF';
   const gridColor = 'rgba(156,163,175,0.15)';
   const labelStyle: React.CSSProperties = {fontSize: 9, fontFamily: 'ui-monospace,monospace'};
@@ -112,8 +118,9 @@ export const TrendChart: React.FC<TrendChartProps> = ({
     <svg
       viewBox={`0 0 ${viewWidth} ${viewHeight}`}
       style={{width: '100%', height: '100%', display: 'block'}}
-      aria-label={`趋势图，${series.length} 个采样点`}
+      aria-label={`趋势图，${series.length} 个板块`}
     >
+      {/* Grid lines */}
       {yTicks.map((v) => {
         const y = yScale(v);
         return (
@@ -137,32 +144,43 @@ export const TrendChart: React.FC<TrendChartProps> = ({
         );
       })}
 
+      {/* Zero line */}
       {zeroY >= M.top && zeroY <= M.top + chartH && (
         <line
           x1={M.left} y1={zeroY}
           x2={M.left + chartW} y2={zeroY}
-          stroke={trendColor}
-          strokeOpacity={0.3}
+          stroke={axisColor}
+          strokeOpacity={0.4}
           strokeWidth={1.5}
           strokeDasharray="3 3"
         />
       )}
 
-      {fillPath && (
-        <path d={fillPath} fill={trendColor} fillOpacity={0.12} />
-      )}
+      {/* Series lines */}
+      {series.map((s, si) => {
+        if (s.data.length < 2) return null;
+        const pts = s.data.map((p, i) => `${xScale(i, s.data.length)},${yScale(p.v)}`);
+        const pathD = `M${pts.join(' L')}`;
+        return (
+          <g key={s.name}>
+            <path
+              d={pathD}
+              fill="none"
+              stroke={s.color || CHART_COLORS[si % CHART_COLORS.length]}
+              strokeWidth={1.5}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              opacity={0.9}
+            />
+          </g>
+        );
+      })}
 
-      <path
-        d={linePath}
-        fill="none"
-        stroke={trendColor}
-        strokeWidth={1.5}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-
+      {/* X-axis ticks */}
       {xTickIndices.map((idx) => {
-        const x = xScale(idx);
+        const x = xScale(idx, allPoints.length);
+        const p = allPoints[idx];
+        if (!p) return null;
         return (
           <g key={`xt-${idx}`}>
             <line
@@ -177,12 +195,13 @@ export const TrendChart: React.FC<TrendChartProps> = ({
               fill={axisColor}
               style={labelStyle}
             >
-              {fmtTime(series[idx].t)}
+              {fmtTime(p.t)}
             </text>
           </g>
         );
       })}
 
+      {/* Bottom axis line */}
       <line
         x1={M.left} y1={M.top + chartH}
         x2={M.left + chartW} y2={M.top + chartH}

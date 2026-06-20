@@ -2,7 +2,7 @@ import React from 'react';
 import type {AlertEvent, SectorType, SeriesPoint, TickConfig} from '../types';
 import type {EastmoneySector, TickSnapshot, CollectorStatus} from '../types';
 import * as api from '../api';
-import {TrendChart} from './TrendChart';
+import {TrendChart, MultiSeries} from './TrendChart';
 
 // ─── Theme System ───────────────────────────────────────────────
 type ThemeVars = {
@@ -298,7 +298,14 @@ export const App: React.FC = () => {
   const [tableFilter, setTableFilter] = React.useState(loadTableFilter);
   const [sortState, setSortState] = React.useState<SortState>(loadSortState);
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
-  const [chartSector, setChartSector] = React.useState<string | null>(null);
+  const [chartSectors, setChartSectors] = React.useState<Set<string>>(new Set());
+  const toggleChartSector = (name: string) => {
+    setChartSectors((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  };
   const [alerts, setAlerts] = React.useState<Array<AlertEvent & {id: number}>>([]);
   const [alwaysOnTop, setAlwaysOnTop] = React.useState(false);
 
@@ -875,9 +882,9 @@ export const App: React.FC = () => {
                                 }}
                               >
                                 <span
-                                onClick={() => setChartSector(name)}
-                                style={{cursor: 'pointer'}}
-                                title="查看走势"
+                                onClick={() => toggleChartSector(name)}
+                                style={{cursor: 'pointer', fontWeight: chartSectors.has(name) ? 700 : 400, color: chartSectors.has(name) ? C.cyan : chipColor}}
+                                title={chartSectors.has(name) ? '移出对比' : '加入对比'}
                               >{name}</span>
                                 <button
                                   onClick={() => onToggleSector(name)}
@@ -908,29 +915,40 @@ export const App: React.FC = () => {
                     ))}
                   </div>
 
-                  {chartSector && (() => {
-                    const series = state.seriesBySector[chartSector];
-                    const sectorData = snapshot?.sectors.find((s) => s.name === chartSector);
-                    if (!series || series.length === 0) return null;
+                  {chartSectors.size > 0 && (() => {
+                    const multiSeries: MultiSeries[] = [];
+                    const colorList = ['#F87171', '#4ADE80', '#60A5FA', '#FBBF24', '#A78BFA', '#FB923C', '#34D399', '#38BDF8'];
+                    let ci = 0;
+                    for (const name of chartSectors) {
+                      const data = state.seriesBySector[name];
+                      if (data && data.length > 0) {
+                        multiSeries.push({name, data, color: colorList[ci % colorList.length]});
+                        ci++;
+                      }
+                    }
+                    if (multiSeries.length === 0) return null;
                     return (
                       <div style={{flexShrink: 0, borderTop: C.border, marginTop: 8, paddingTop: 10}}>
                         <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
-                          <div style={{fontSize: 12, fontWeight: 600, color: C.text}}>{chartSector}</div>
+                          <div style={{fontSize: 12, fontWeight: 600, color: C.text}}>
+                            {multiSeries.length} 个板块走势对比
+                          </div>
                           <button
-                            onClick={() => setChartSector(null)}
-                            style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 14, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
-                          >×</button>
+                            onClick={() => setChartSectors(new Set())}
+                            style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 12, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
+                          >清除</button>
+                        </div>
+                        <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4}}>
+                          {multiSeries.map((m) => (
+                            <span key={m.name} style={{fontSize: 11, color: m.color, display: 'flex', alignItems: 'center', gap: 3}}>
+                              <span style={{width: 8, height: 8, borderRadius: '50%', background: m.color, display: 'inline-block'}} />
+                              {m.name}
+                            </span>
+                          ))}
                         </div>
                         <div style={{height: 140}}>
-                          <TrendChart series={series} viewWidth={300} viewHeight={140} />
+                          <TrendChart series={multiSeries} viewWidth={300} viewHeight={140} />
                         </div>
-                        {sectorData && (
-                          <div style={{display: 'flex', gap: 12, fontSize: 11, color: C.textSec, marginTop: 4}}>
-                            <span>净流入: <span style={{color: sectorData.net >= 0 ? C.red : C.green, fontWeight: 600, fontFamily: C.fontMono}}>{formatNet(sectorData.net)}</span></span>
-                            <span>主力净占比: <span style={{fontWeight: 600, fontFamily: C.fontMono}}>{formatRate(sectorData.rate)}</span></span>
-                            <span>换手率: <span style={{fontWeight: 600, fontFamily: C.fontMono}}>{formatRatio(sectorData.turnoverRate)}%</span></span>
-                          </div>
-                        )}
                       </div>
                     );
                   })()}
