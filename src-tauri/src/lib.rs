@@ -241,6 +241,17 @@ pub fn run() {
         ])
         .setup(|app| {
             log::info!("app started");
+            if let Some(ws) = config::load_window_state(app.handle()) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_position(tauri::PhysicalPosition::new(ws.x as i32, ws.y as i32));
+                    let _ = w.set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+                        ws.width.max(800.0) as u32, ws.height.max(600.0) as u32,
+                    )));
+                    if ws.maximized {
+                        let _ = w.maximize();
+                    }
+                }
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 collector::start_collector(handle);
@@ -251,6 +262,19 @@ pub fn run() {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 let state: State<'_, CollectorState> = window.state();
                 state.running.store(false, Ordering::SeqCst);
+                // Save window state before closing
+                let handle = window.app_handle();
+                if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
+                    let is_max = window.is_maximized().unwrap_or(false);
+                    let ws = config::WindowState {
+                        x: pos.x as f64,
+                        y: pos.y as f64,
+                        width: size.width as f64,
+                        height: size.height as f64,
+                        maximized: is_max,
+                    };
+                    let _ = config::save_window_state(&handle, &ws);
+                }
             }
         })
         .run(tauri::generate_context!())
