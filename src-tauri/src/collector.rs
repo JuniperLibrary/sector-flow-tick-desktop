@@ -1,3 +1,4 @@
+use std::cmp::min;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -63,6 +64,17 @@ fn is_trading_time() -> bool {
     if hour == 11 && min < 30 { return true; }
     // Afternoon: 13:00 - 15:00
     if hour >= 13 && hour < 15 { return true; }
+    if hour == 15 && min == 0 { return true; }
+    false
+}
+
+/// True within 3 minutes before market close (11:27-11:30, 14:57-15:00)
+fn is_near_trading_close() -> bool {
+    let china_now = chrono::Utc::now() + chrono::Duration::hours(8);
+    let hour = china_now.hour();
+    let min = china_now.minute();
+    if hour == 11 && min >= 27 { return true; }
+    if hour == 14 && min >= 57 { return true; }
     if hour == 15 && min == 0 { return true; }
     false
 }
@@ -200,7 +212,13 @@ pub fn start_collector(app: AppHandle) {
                 let _ = app.emit("tick-status", &status);
             }
 
-            tokio::time::sleep(Duration::from_secs(cfg.interval_sec)).await;
+            // Adaptive interval: high freq in last 3 min before close, normal otherwise
+            let sleep_sec = if is_near_trading_close() {
+                min(cfg.interval_sec, 15)
+            } else {
+                cfg.interval_sec
+            };
+            tokio::time::sleep(Duration::from_secs(sleep_sec)).await;
 
             if !state.running.load(Ordering::SeqCst) {
                 log::info!("collector stopped");
