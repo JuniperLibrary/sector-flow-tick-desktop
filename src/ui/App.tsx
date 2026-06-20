@@ -69,6 +69,25 @@ const lightTheme: ThemeVars = {
 
 // ────────────────────────────────────────────────────────────────
 
+const LS_SORT_KEY = 'sf-sort-state';
+const LS_FILTER_KEY = 'sf-table-filter';
+
+function loadSortState(): SortState {
+  try {
+    const raw = localStorage.getItem(LS_SORT_KEY);
+    if (raw) return JSON.parse(raw) as SortState;
+  } catch {}
+  return {field: 'Net', direction: 'desc'};
+}
+
+function loadTableFilter(): string {
+  try {
+    const raw = localStorage.getItem(LS_FILTER_KEY);
+    return raw ?? '';
+  } catch {}
+  return '';
+}
+
 const intervalOptions = [
   {value: 60, label: '1 分钟'},
   {value: 180, label: '3 分钟'},
@@ -276,8 +295,8 @@ export const App: React.FC = () => {
     seriesBySector: {},
   });
   const [pickerSearch, setPickerSearch] = React.useState('');
-  const [tableFilter, setTableFilter] = React.useState('');
-  const [sortState, setSortState] = React.useState<SortState>({field: 'Net', direction: 'desc'});
+  const [tableFilter, setTableFilter] = React.useState(loadTableFilter);
+  const [sortState, setSortState] = React.useState<SortState>(loadSortState);
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
   const [chartSector, setChartSector] = React.useState<string | null>(null);
 
@@ -358,6 +377,13 @@ export const App: React.FC = () => {
       unsubConfig?.();
     };
   }, []);
+
+  React.useEffect(() => {
+    localStorage.setItem(LS_SORT_KEY, JSON.stringify(sortState));
+  }, [sortState]);
+  React.useEffect(() => {
+    localStorage.setItem(LS_FILTER_KEY, tableFilter);
+  }, [tableFilter]);
 
   const cfg = state.config;
   const status = state.status;
