@@ -1,6 +1,6 @@
 [package]
 name = "app"
-version = "0.3.1"
+version = "0.3.2"
 description = "独立的东方财富板块资金流实时监控桌面端"
 authors = ["JuniperLibrary"]
 license = "MIT"
