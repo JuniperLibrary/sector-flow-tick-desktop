@@ -375,9 +375,35 @@ export const App: React.FC = () => {
         setTimeout(() => {
           setAlerts((prev) => prev.filter((a) => a.id !== id));
         }, 4500);
+        // Play beep sound via Web Audio API
+        try {
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.value = 880;
+          gain.gain.setValueAtTime(0.3, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(ctx.currentTime);
+          osc.stop(ctx.currentTime + 0.2);
+        } catch (_) { /* audio not available */ }
+        // System notification
+        try {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('资金异动', {
+              body: `${alert.sectorName} ${alert.delta >= 0 ? '+' : ''}${(alert.delta).toFixed(1)}亿`,
+            });
+          }
+        } catch (_) { /* notification not available */ }
       });
     };
 
+    // Request notification permission on first load
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
     init().catch((err) => {
       console.error(err);
       setState((s) => ({...s, loaded: true}));
