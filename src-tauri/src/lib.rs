@@ -23,6 +23,19 @@ fn set_config(app: AppHandle, cfg: TickConfig) -> Result<(), String> {
     Ok(())
 }
 
+fn compute_state_str(running: bool, paused: bool, has_error: bool) -> String {
+    if !running {
+        return "stopped".into();
+    }
+    if paused {
+        return "paused".into();
+    }
+    if has_error {
+        return "error".into();
+    }
+    "running".into()
+}
+
 #[tauri::command]
 async fn get_collector_status(
     app: AppHandle,
@@ -31,13 +44,12 @@ async fn get_collector_status(
     let last_at = *state.last_at.lock().await;
     let last_error = state.last_error.lock().await.clone();
     let cfg = config::load_config(&app);
-    let state_str = if state.running.load(Ordering::SeqCst) {
-        if last_error.is_some() { "error" } else { "idle" }
-    } else {
-        "stopped"
-    };
     Ok(CollectorStatus {
-        state: state_str.into(),
+        state: compute_state_str(
+            state.running.load(Ordering::SeqCst),
+            state.trading_time_paused.load(Ordering::SeqCst),
+            last_error.is_some(),
+        ),
         interval_sec: cfg.interval_sec,
         last_at,
         last_error,
@@ -152,13 +164,12 @@ async fn get_initial_data(
     let status = {
         let last_at = *state.last_at.lock().await;
         let last_error = state.last_error.lock().await.clone();
-        let state_str = if state.running.load(Ordering::SeqCst) {
-        if last_error.is_some() { "error" } else { "running" }
-        } else {
-            "stopped"
-        };
         CollectorStatus {
-            state: state_str.into(),
+            state: compute_state_str(
+                state.running.load(Ordering::SeqCst),
+                state.trading_time_paused.load(Ordering::SeqCst),
+                last_error.is_some(),
+            ),
             interval_sec: cfg.interval_sec,
             last_at,
             last_error,
@@ -228,8 +239,12 @@ pub fn run() {
             stop_collection,
             get_initial_data,
         ])
-        .setup(|_app| {
+        .setup(|app| {
             log::info!("app started");
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                collector::start_collector(handle);
+            });
             Ok(())
         })
         .on_window_event(|window, event| {

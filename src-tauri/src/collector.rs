@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
+use chrono::{Datelike, Timelike};
 use tokio::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -11,6 +12,7 @@ use crate::models::*;
 
 pub struct CollectorState {
     pub running: AtomicBool,
+    pub trading_time_paused: AtomicBool,
     pub last_at: Mutex<Option<i64>>,
     pub last_error: Mutex<Option<String>>,
     pub history: Mutex<Vec<SectorSnapshot>>,
@@ -20,6 +22,7 @@ impl CollectorState {
     pub fn new() -> Self {
         Self {
             running: AtomicBool::new(false),
+            trading_time_paused: AtomicBool::new(false),
             last_at: Mutex::new(None),
             last_error: Mutex::new(None),
             history: Mutex::new(Vec::new()),
@@ -38,6 +41,26 @@ impl Default for SnapshotsState {
 
 const MAX_HISTORY_SNAPSHOTS: usize = 500;
 
+/// A-share trading hours check (China timezone UTC+8).
+/// Returns true during weekday sessions: 09:30-11:30 and 13:00-15:00.
+fn is_trading_time() -> bool {
+    let china_now = chrono::Utc::now() + chrono::Duration::hours(8);
+    match china_now.weekday() {
+        chrono::Weekday::Sat | chrono::Weekday::Sun => return false,
+        _ => {}
+    }
+    let hour = china_now.hour();
+    let min = china_now.minute();
+    // Morning: 09:30 - 11:30
+    if hour == 9 && min >= 30 { return true; }
+    if hour == 10 { return true; }
+    if hour == 11 && min < 30 { return true; }
+    // Afternoon: 13:00 - 15:00
+    if hour >= 13 && hour < 15 { return true; }
+    if hour == 15 && min == 0 { return true; }
+    false
+}
+
 pub fn start_collector(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         let state: State<'_, CollectorState> = app.state::<CollectorState>();
@@ -50,6 +73,25 @@ pub fn start_collector(app: AppHandle) {
 
         loop {
             let cfg = config::load_config(&app);
+
+            // Pause when outside A-share trading hours
+            if !is_trading_time() {
+                state.trading_time_paused.store(true, Ordering::SeqCst);
+                let status = CollectorStatus {
+                    state: "paused".into(),
+                    interval_sec: cfg.interval_sec,
+                    last_at: *state.last_at.lock().await,
+                    last_error: state.last_error.lock().await.clone(),
+                };
+                let _ = app.emit("tick-status", &status);
+                tokio::time::sleep(Duration::from_secs(30)).await;
+                if !state.running.load(Ordering::SeqCst) {
+                    log::info!("collector stopped while paused");
+                    break;
+                }
+                continue;
+            }
+            state.trading_time_paused.store(false, Ordering::SeqCst);
 
             {
                 let last_at = *state.last_at.lock().await;

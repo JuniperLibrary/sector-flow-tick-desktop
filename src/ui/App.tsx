@@ -514,8 +514,8 @@ export const App: React.FC = () => {
               </div>
               <div style={{display: 'flex', alignItems: 'center', gap: 10}}>
                 <div style={{display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: C.textSec}}>
-                  <span className="live-dot" style={{display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: status?.state === 'running' ? C.cyan : C.textMuted, boxShadow: status?.state === 'running' ? `0 0 8px ${C.cyan}` : 'none'}} />
-                  {status?.state === 'running' ? '运行中' : '待机'}
+                  <span className="live-dot" style={{display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: status?.state === 'running' ? C.cyan : status?.state === 'paused' ? C.yellow : C.textMuted, boxShadow: status?.state === 'running' ? `0 0 8px ${C.cyan}` : status?.state === 'paused' ? `0 0 8px ${C.yellow}` : 'none'}} />
+                  {status?.state === 'running' ? '运行中' : status?.state === 'paused' ? '休市中' : '待机'}
                 </div>
                 <button
                   onClick={() => setTheme((t) => t === 'dark' ? 'light' : 'dark')}
@@ -562,18 +562,18 @@ export const App: React.FC = () => {
             <div style={{display: 'flex', gap: 10, marginBottom: 14, flexShrink: 0}}>
               <button
                 onClick={onStart}
-                disabled={!canStart || status?.state === 'running'}
+                disabled={!canStart || status?.state === 'running' || status?.state === 'paused'}
                 style={{
                   flex: 1,
                   padding: '10px 12px',
                   borderRadius: C.radiusSm,
                   border: status?.state === 'running' ? `1px solid rgba(${C.cyanRgb},0.2)` : 'none',
-                  background: status?.state === 'running'
+                  background: status?.state === 'running' || status?.state === 'paused'
                     ? `rgba(${C.cyanRgb},0.08)`
                     : `linear-gradient(135deg, rgba(${C.cyanRgb},0.50), rgba(59,130,246,0.35))`,
-                  boxShadow: status?.state === 'running' ? 'none' : `0 2px 12px rgba(${C.cyanRgb},0.15)`,
-                  color: status?.state === 'running' ? C.cyan : '#fff',
-                  cursor: !canStart || status?.state === 'running' ? 'not-allowed' : 'pointer',
+                  boxShadow: status?.state === 'running' || status?.state === 'paused' ? 'none' : `0 2px 12px rgba(${C.cyanRgb},0.15)`,
+                  color: status?.state === 'running' || status?.state === 'paused' ? C.cyan : '#fff',
+                  cursor: !canStart || status?.state === 'running' || status?.state === 'paused' ? 'not-allowed' : 'pointer',
                   fontWeight: 700,
                   fontSize: 13,
                   letterSpacing: '0.02em',
@@ -584,15 +584,15 @@ export const App: React.FC = () => {
               </button>
               <button
                 onClick={onStop}
-                disabled={status?.state !== 'running'}
+                disabled={status?.state !== 'running' && status?.state !== 'paused'}
                 style={{
                   flex: 1,
                   padding: '10px 12px',
                   borderRadius: C.radiusSm,
-                  border: status?.state === 'running' ? `1px solid ${C.red}33` : C.border,
-                  background: status?.state === 'running' ? `${C.red}0D` : C.bgInput,
-                  color: status?.state === 'running' ? C.red : C.textMuted,
-                  cursor: status?.state !== 'running' ? 'not-allowed' : 'pointer',
+                  border: (status?.state === 'running' || status?.state === 'paused') ? `1px solid ${C.red}33` : C.border,
+                  background: (status?.state === 'running' || status?.state === 'paused') ? `${C.red}0D` : C.bgInput,
+                  color: (status?.state === 'running' || status?.state === 'paused') ? C.red : C.textMuted,
+                  cursor: (status?.state !== 'running' && status?.state !== 'paused') ? 'not-allowed' : 'pointer',
                   fontWeight: 700,
                   fontSize: 13,
                   letterSpacing: '0.02em',
@@ -605,7 +605,7 @@ export const App: React.FC = () => {
 
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14, flexShrink: 0}}>
               {[
-                {label: '状态', value: status?.state === 'running' ? '运行中' : status?.state === 'stopped' ? '已停止' : status?.state === 'error' ? '错误' : '—', tone: status?.state === 'running' ? C.cyan : C.textSec},
+                {label: '状态', value: status?.state === 'running' ? '运行中' : status?.state === 'paused' ? '休市中' : status?.state === 'stopped' ? '已停止' : status?.state === 'error' ? '错误' : '—', tone: status?.state === 'running' ? C.cyan : status?.state === 'paused' ? C.yellow : C.textSec},
                 {label: '频率', value: cfg ? intervalOptions.find((i) => i.value === cfg.intervalSec)?.label ?? `${cfg.intervalSec}s` : '—', tone: C.purple},
                 {label: '最近采集', value: formatTime(status?.lastAt ?? snapshot?.at ?? undefined), tone: C.teal},
                 {label: '已选板块', value: cfg ? `${cfg.selectedSectors.length}` : '—', tone: C.yellow},
