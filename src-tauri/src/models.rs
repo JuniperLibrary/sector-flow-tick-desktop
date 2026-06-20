@@ -57,9 +57,27 @@ impl Default for TickConfig {
     }
 }
 
+fn deserialize_i64_flexible<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum I64OrString {
+        I64(i64),
+        S(String),
+    }
+    match I64OrString::deserialize(deserializer)? {
+        I64OrString::I64(v) => Ok(v),
+        I64OrString::S(s) => Ok(s.parse::<i64>().unwrap_or(0)),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EastmoneySector {
+    #[serde(rename = "f14")]
     pub name: String,
+    #[serde(rename = "f12")]
     pub code: String,
     #[serde(rename = "f3")]
     pub change_pct: f64,
@@ -91,9 +109,9 @@ pub struct EastmoneySector {
     pub net_5d: f64,
     #[serde(rename = "f264")]
     pub net_10d: f64,
-    #[serde(rename = "f204")]
+    #[serde(rename = "f204", deserialize_with = "deserialize_i64_flexible")]
     pub up_count: i64,
-    #[serde(rename = "f205")]
+    #[serde(rename = "f205", deserialize_with = "deserialize_i64_flexible")]
     pub down_count: i64,
     #[serde(rename = "f100")]
     pub leader_name: String,
