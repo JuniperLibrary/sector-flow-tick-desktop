@@ -652,11 +652,11 @@ export const App: React.FC = () => {
                 {cfg ? (
                   <>
                     <span onClick={() => {
-                      const all = state.allSectors;
-                      const nextCfg = {...cfg, selectedSectors: Array.from(all)};
+                      const targets = pickerSearch.trim() ? pickerOptions : state.allSectors;
+                      const nextCfg = {...cfg, selectedSectors: Array.from(targets)};
                       api.setConfig(nextCfg);
                       setState((s) => ({...s, config: nextCfg}));
-                    }} style={{cursor: 'pointer', color: C.cyan}} title="全选当前板块类型下所有板块">全选</span>
+                    }} style={{cursor: 'pointer', color: C.cyan}} title={pickerSearch.trim() ? '全选搜索结果' : '全选当前板块类型下所有板块'}>全选</span>
                     <span onClick={() => {
                       const nextCfg = {...cfg, selectedSectors: []};
                       api.setConfig(nextCfg);
