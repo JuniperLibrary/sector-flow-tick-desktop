@@ -20,7 +20,11 @@ pub fn load_config(app: &AppHandle) -> TickConfig {
     }
     match fs::read_to_string(&path) {
         Ok(content) => {
-            serde_json::from_str(&content).unwrap_or_default()
+            let mut cfg: TickConfig = serde_json::from_str(&content).unwrap_or_default();
+            if cfg.selected_sectors.is_empty() {
+                cfg.selected_sectors = TickConfig::default().selected_sectors;
+            }
+            cfg
         }
         Err(_) => TickConfig::default(),
     }

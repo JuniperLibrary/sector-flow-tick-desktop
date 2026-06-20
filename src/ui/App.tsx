@@ -308,7 +308,7 @@ export const App: React.FC = () => {
       }
 
       let resolvedCfg = cfg;
-      if (cfg) {
+      if (cfg && allSectors.length > 0) {
         const allow = new Set(allSectors);
         const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
         if (validSelected.length !== cfg.selectedSectors.length) {
