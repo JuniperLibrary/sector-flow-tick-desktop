@@ -132,6 +132,15 @@ function formatTime(ms?: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+function formatFreshness(at: number | undefined, nowTs: number): {text: string; color: string} {
+  if (!at) return {text: '暂无数据', color: '#64748B'};
+  const diff = Math.floor((nowTs - at) / 1000);
+  if (diff < 30) return {text: '刚刚', color: '#4ADE80'};
+  if (diff < 60) return {text: `${diff}秒前`, color: '#4ADE80'};
+  if (diff < 300) return {text: `${Math.floor(diff / 60)}分钟前`, color: '#FBBF24'};
+  return {text: `${Math.floor(diff / 60)}分钟前`, color: '#F87171'};
+}
+
 function formatVal(v: number): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(1)}`;
 }
@@ -309,6 +318,7 @@ export const App: React.FC = () => {
   const [alerts, setAlerts] = React.useState<Array<AlertEvent & {id: number}>>([]);
   const [alwaysOnTop, setAlwaysOnTop] = React.useState(false);
   const [detailSector, setDetailSector] = React.useState<EastmoneySector | null>(null);
+  const [now, setNow] = React.useState(Date.now());
 
   const frozenBg = React.useMemo(() => theme === 'dark' ? '#0F172A' : '#FFFFFF', [theme]);
 
@@ -430,6 +440,10 @@ export const App: React.FC = () => {
   React.useEffect(() => {
     localStorage.setItem(LS_FILTER_KEY, tableFilter);
   }, [tableFilter]);
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const cfg = state.config;
   const status = state.status;
@@ -678,7 +692,10 @@ export const App: React.FC = () => {
           <div style={{...cardStyle, padding: 16, display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0}}>
             <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, flexShrink: 0}}>
               <div style={{fontWeight: 700, color: C.text}}>采集控制</div>
-              <div style={{fontSize: 12, color: C.textMuted}}>快照 {formatTime(snapshot?.at)}</div>
+              <div style={{display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: C.textMuted}}>
+                <span style={{display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: formatFreshness(snapshot?.at, now).color, boxShadow: `0 0 6px ${formatFreshness(snapshot?.at, now).color}`}} />
+                {formatFreshness(snapshot?.at, now).text}
+              </div>
             </div>
 
             <div style={{display: 'flex', gap: 10, marginBottom: 14, flexShrink: 0}}>
@@ -729,7 +746,7 @@ export const App: React.FC = () => {
               {[
                 {label: '状态', value: status?.state === 'running' ? '运行中' : status?.state === 'paused' ? '休市中' : status?.state === 'stopped' ? '已停止' : status?.state === 'error' ? '错误' : '—', tone: status?.state === 'running' ? C.cyan : status?.state === 'paused' ? C.yellow : C.textSec},
                 {label: '频率', value: cfg ? intervalOptions.find((i) => i.value === cfg.intervalSec)?.label ?? `${cfg.intervalSec}s` : '—', tone: C.purple},
-                {label: '最近采集', value: formatTime(status?.lastAt ?? snapshot?.at ?? undefined), tone: C.teal},
+                {label: '最近采集', value: (() => { const ts = snapshot?.at; const f = formatFreshness(ts, now); return ts ? `${f.text} ${formatTime(ts)}` : '—'; })(), tone: (() => { const f = formatFreshness(snapshot?.at, now); return f.color === '#F87171' ? C.red : f.color === '#FBBF24' ? C.yellow : C.teal; })()},
                 {label: '已选板块', value: cfg ? `${cfg.selectedSectors.length}` : '—', tone: C.yellow},
               ].map((item) => (
                 <div key={item.label} style={{borderRadius: C.radiusSm, border: C.border, background: theme === 'dark' ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.50)', padding: '11px 12px'}}>
@@ -1001,7 +1018,7 @@ export const App: React.FC = () => {
                 </div>
               </div>
               <div style={{fontSize: 12, color: C.textSec, fontFamily: C.fontMono}}>
-                {snapshot ? `${sortedRows.length} 个板块 · ${formatTime(snapshot.at)}` : '暂无快照'}
+                {snapshot ? `${sortedRows.length} 个板块 · ${formatTime(snapshot.at)} · ${formatFreshness(snapshot.at, now).text}` : '暂无快照'}
               </div>
             </div>
 
