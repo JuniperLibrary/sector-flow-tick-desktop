@@ -1,7 +1,7 @@
 {
   "name": "sector-flow-tick-desktop",
   "private": true,
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "独立的东方财富板块资金流实时监控桌面端",
   "author": "JuniperLibrary",
   "type": "module",

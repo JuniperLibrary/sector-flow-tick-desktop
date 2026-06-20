@@ -14,10 +14,12 @@ jobs:
         include:
           - os: macos-latest
             platform: macOS
+            bundles: dmg
             bundle_pattern: src-tauri/target/release/bundle/**/*.dmg
             ext: dmg
           - os: windows-latest
             platform: Windows
+            bundles: nsis
             bundle_pattern: src-tauri/target/release/bundle/**/*.exe
             ext: exe
     runs-on: ${{ matrix.os }}
@@ -32,11 +34,20 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install system deps (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install create-dmg
+
       - name: Install dependencies
         run: npm ci
+        env:
+          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
       - name: Build and package (${{ matrix.platform }})
-        run: npm run dist
+        run: npm run dist -- --bundles ${{ matrix.bundles }}
+        env:
+          CARGO_NET_RETRY: 3
+          ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
