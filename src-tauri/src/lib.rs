@@ -6,10 +6,16 @@ mod models;
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
 
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use collector::CollectorState;
 use models::*;
+
+/// Stored in app state to keep the tray icon alive (Tauri drops it if unmanaged).
+#[allow(dead_code)]
+struct TrayStore(tauri::tray::TrayIcon);
 
 #[tauri::command]
 fn get_config(app: AppHandle) -> TickConfig {
@@ -266,6 +272,58 @@ pub fn run() {
                     }
                 }
             }
+
+            // Build tray menu
+            let show_hide = MenuItemBuilder::with_id("show_hide", "显示窗口")
+                .build(app)?;
+            let quit = MenuItemBuilder::with_id("quit", "退出")
+                .build(app)?;
+            let menu = MenuBuilder::new(app)
+                .item(&show_hide)
+                .separator()
+                .item(&quit)
+                .build()?;
+
+            // Use default window icon as tray icon
+            let icon = app.default_window_icon().cloned().unwrap_or_else(|| {
+                tauri::image::Image::new(&[], 0, 0)
+            });
+
+            let _tray = TrayIconBuilder::new()
+                .icon(icon)
+                .menu(&menu)
+                .on_menu_event(|app, event| {
+                    match event.id().as_ref() {
+                        "show_hide" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                if window.is_visible().unwrap_or(false) {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        _ => {}
+                    }
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click { .. } = event {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)?;
+
+            // Store tray handle so it stays alive
+            app.manage(TrayStore(_tray));
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 collector::start_collector(handle);
@@ -273,10 +331,10 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { .. } = event {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 let state: State<'_, CollectorState> = window.state();
                 state.running.store(false, Ordering::SeqCst);
-                // Save window state before closing
+                // Save window state before hiding
                 let handle = window.app_handle();
                 if let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) {
                     let is_max = window.is_maximized().unwrap_or(false);
@@ -289,6 +347,9 @@ pub fn run() {
                     };
                     let _ = config::save_window_state(&handle, &ws);
                 }
+                // Hide to tray instead of closing
+                api.prevent_close();
+                let _ = window.hide();
             }
         })
         .run(tauri::generate_context!())
