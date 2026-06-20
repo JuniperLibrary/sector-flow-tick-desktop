@@ -308,6 +308,7 @@ export const App: React.FC = () => {
   };
   const [alerts, setAlerts] = React.useState<Array<AlertEvent & {id: number}>>([]);
   const [alwaysOnTop, setAlwaysOnTop] = React.useState(false);
+  const [detailSector, setDetailSector] = React.useState<EastmoneySector | null>(null);
 
   const frozenBg = React.useMemo(() => theme === 'dark' ? '#0F172A' : '#FFFFFF', [theme]);
 
@@ -1181,7 +1182,8 @@ export const App: React.FC = () => {
                             }}>
                               <div style={{display: 'flex', alignItems: 'center'}}>
                                 <div style={{width: colWidths['板块'] ?? 110, paddingRight: 12, boxSizing: 'border-box'}}>
-                                  <div style={{fontWeight: 600, color: C.text, fontSize: 13, transition: C.transition}}
+                                  <div style={{fontWeight: 600, color: C.text, fontSize: 13, transition: C.transition, cursor: 'pointer'}}
+                                    onClick={() => setDetailSector(row.latest)}
                                     onMouseEnter={(e) => (e.currentTarget.style.color = C.cyan)}
                                     onMouseLeave={(e) => (e.currentTarget.style.color = C.text)}>
                                     {row.name}
@@ -1316,6 +1318,81 @@ export const App: React.FC = () => {
           );
         })}
       </div>
+      {detailSector && (
+        <div
+          onClick={() => setDetailSector(null)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(0,0,0,0.45)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: theme === 'dark' ? '#1E2230' : '#FFFFFF',
+              borderRadius: C.radius,
+              border: C.border,
+              boxShadow: '0 16px 64px rgba(0,0,0,0.35)',
+              padding: 24,
+              width: 520,
+              maxHeight: '80vh',
+              overflowY: 'auto',
+            }}
+          >
+            <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16}}>
+              <div>
+                <span style={{fontWeight: 700, fontSize: 16, color: C.text}}>{detailSector.name}</span>
+                <span style={{marginLeft: 8, fontSize: 12, color: C.textMuted}}>
+                  {detailSector.bkCode}
+                </span>
+                <span style={{marginLeft: 8, fontSize: 11, padding: '2px 8px', borderRadius: 4,
+                  background: detailSector.sectorType === 'concept' ? `${C.purple}18` : detailSector.sectorType === 'region' ? `${C.teal}18` : `${C.cyan}12`,
+                  color: detailSector.sectorType === 'concept' ? C.purple : detailSector.sectorType === 'region' ? C.teal : C.cyan,
+                }}>
+                  {sectorTypeLabel(detailSector.sectorType)}
+                </span>
+              </div>
+              <button onClick={() => setDetailSector(null)}
+                style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 18, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
+              >×</button>
+            </div>
+            <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px'}}>
+              {[
+                {label: '涨跌幅', value: formatRate(detailSector.changePct), color: netTextColor(detailSector.changePct)},
+                {label: '换手率', value: `${formatRatio(detailSector.turnoverRate)}%`, color: C.textSec},
+                {label: '量比', value: formatRatio(detailSector.volumeRatio), color: C.textSec},
+                {label: '涨速', value: formatRate(detailSector.speed), color: netTextColor(detailSector.speed)},
+                {label: '60日涨幅', value: formatRate(detailSector.change60d), color: netTextColor(detailSector.change60d)},
+                {label: '年初至今', value: formatRate(detailSector.changeYtd), color: netTextColor(detailSector.changeYtd)},
+                {label: '成交额', value: formatVal(detailSector.turnover), color: C.textSec},
+                {label: '净流入', value: formatVal(detailSector.net), color: netTextColor(detailSector.net)},
+                {label: '主力净占比', value: formatRate(detailSector.rate), color: netTextColor(detailSector.rate)},
+                {label: '超大宗净流入', value: formatVal(detailSector.superNet), color: netTextColor(detailSector.superNet)},
+                {label: '大宗净流入', value: formatVal(detailSector.bigNet), color: netTextColor(detailSector.bigNet)},
+                {label: '中单净流入', value: formatVal(detailSector.midNet), color: netTextColor(detailSector.midNet)},
+                {label: '小单净流入', value: formatVal(detailSector.smallNet), color: netTextColor(detailSector.smallNet)},
+                {label: '5日净流入', value: formatVal(detailSector.net5d), color: netTextColor(detailSector.net5d)},
+                {label: '10日净流入', value: formatVal(detailSector.net10d), color: netTextColor(detailSector.net10d)},
+                {label: '上涨家数', value: formatCount(detailSector.upCount), color: C.red},
+                {label: '下跌家数', value: formatCount(detailSector.downCount), color: C.green},
+                {label: '涨跌差', value: formatDiff(detailSector.upCount - detailSector.downCount), color: netTextColor(detailSector.upCount - detailSector.downCount)},
+                {label: '领涨股', value: detailSector.leaderStock || '—', color: C.text},
+                {label: '领涨涨幅', value: formatRate(detailSector.leaderChangePct), color: netTextColor(detailSector.leaderChangePct)},
+              ].map((item) => (
+                <div key={item.label} style={{display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: C.rowBorder}}>
+                  <span style={{fontSize: 12, color: C.textMuted}}>{item.label}</span>
+                  <span style={{fontSize: 13, fontWeight: 600, fontFamily: C.fontMono, color: item.color}}>{item.value}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop: 12, fontSize: 11, color: C.textMuted, textAlign: 'center'}}>
+              快照时间 {formatTime(snapshot?.at)}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
