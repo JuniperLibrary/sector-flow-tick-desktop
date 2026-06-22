@@ -352,10 +352,23 @@ export const App: React.FC = () => {
       if (cfg && allSectorNames.length > 0) {
         const allow = new Set(allSectorNames);
         const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
+
+        // Trim invalid sectors (removed from API)
         if (validSelected.length !== cfg.selectedSectors.length) {
           resolvedCfg = {...cfg, selectedSectors: validSelected};
           await api.setConfig(resolvedCfg);
-        } else if (cfg.selectedSectors.length === 0) {
+        }
+
+        // Recovery: if previous bug trimmed 21 hot sectors → ~5, restore to full hot list
+        if (resolvedCfg.selectedSectors.length < hotSectors.length &&
+            resolvedCfg.selectedSectors.every((s) => hotSectors.includes(s)) &&
+            hotSectors.every((s) => allow.has(s))) {
+          resolvedCfg = {...resolvedCfg, selectedSectors: [...hotSectors]};
+          await api.setConfig(resolvedCfg);
+        }
+
+        // Empty selection → populate with valid hot sectors
+        if (cfg.selectedSectors.length === 0) {
           const hotInAll = hotSectors.filter((h) => allSectorNames.includes(h));
           if (hotInAll.length > 0) {
             resolvedCfg = {...cfg, selectedSectors: hotInAll};
