@@ -157,8 +157,13 @@ pub fn start_collector(app: AppHandle) {
                 let cfg = config::load_config(&app);
                 if cfg.alert_enabled {
                     let threshold = cfg.alert_threshold;
+                    let watch_set: std::collections::HashSet<&str> =
+                        cfg.selected_sectors.iter().map(|s| s.as_str()).collect();
                     let mut prev_nets = state.prev_nets.lock().await;
                     for sector in &all_sectors {
+                        if !watch_set.contains(sector.name.as_str()) {
+                            continue;
+                        }
                         if let Some(&prev_net) = prev_nets.get(&sector.name) {
                             let delta = sector.net - prev_net;
                             if delta.abs() >= threshold {
