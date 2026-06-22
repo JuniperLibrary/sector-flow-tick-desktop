@@ -471,10 +471,14 @@ export const App: React.FC = () => {
 
   const allRows = React.useMemo(() => buildRows(snapshot, state.seriesBySector), [snapshot, state.seriesBySector]);
   const filteredRows = React.useMemo(() => {
+    const selectedSet = new Set(cfg?.selectedSectors ?? []);
+    let rows = selectedSet.size > 0
+      ? allRows.filter((row) => selectedSet.has(row.name))
+      : allRows;
     const q = tableFilter.trim();
-    if (!q) return allRows;
-    return allRows.filter((row) => row.name.includes(q));
-  }, [allRows, tableFilter]);
+    if (q) rows = rows.filter((row) => row.name.includes(q));
+    return rows;
+  }, [allRows, tableFilter, cfg?.selectedSectors]);
   const sortedRows = React.useMemo(() => sortRows(filteredRows, sortState), [filteredRows, sortState]);
 
   const counts = React.useMemo(() => {
