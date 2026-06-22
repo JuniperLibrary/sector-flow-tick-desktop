@@ -348,14 +348,15 @@ export const App: React.FC = () => {
       }
 
       let resolvedCfg = cfg;
-      if (cfg && allSectors.length > 0) {
-        const allow = new Set(allSectors);
+      const allSectorNames = sectorsWithType.map((s) => s.name);
+      if (cfg && allSectorNames.length > 0) {
+        const allow = new Set(allSectorNames);
         const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
         if (validSelected.length !== cfg.selectedSectors.length) {
           resolvedCfg = {...cfg, selectedSectors: validSelected};
           await api.setConfig(resolvedCfg);
         } else if (cfg.selectedSectors.length === 0) {
-          const hotInAll = hotSectors.filter((h) => allSectors.includes(h));
+          const hotInAll = hotSectors.filter((h) => allSectorNames.includes(h));
           if (hotInAll.length > 0) {
             resolvedCfg = {...cfg, selectedSectors: hotInAll};
             await api.setConfig(resolvedCfg);
