@@ -80,41 +80,64 @@ where
     }
 }
 
+fn deserialize_f64_flexible<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum F64OrString {
+        F64(f64),
+        S(String),
+    }
+    match F64OrString::deserialize(deserializer)? {
+        F64OrString::F64(v) => Ok(v),
+        F64OrString::S(s) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() || trimmed == "-" {
+                Ok(0.0)
+            } else {
+                Ok(s.parse::<f64>().unwrap_or(0.0))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EastmoneySector {
     #[serde(rename = "f14")]
     pub name: String,
     #[serde(rename = "f12")]
     pub code: String,
-    #[serde(rename = "f3")]
+    #[serde(rename = "f3", deserialize_with = "deserialize_f64_flexible")]
     pub change_pct: f64,
-    #[serde(rename = "f8")]
+    #[serde(rename = "f8", deserialize_with = "deserialize_f64_flexible")]
     pub turnover_rate: f64,
-    #[serde(rename = "f10")]
+    #[serde(rename = "f10", deserialize_with = "deserialize_f64_flexible")]
     pub volume_ratio: f64,
-    #[serde(rename = "f22")]
+    #[serde(rename = "f22", deserialize_with = "deserialize_f64_flexible")]
     pub speed: f64,
-    #[serde(rename = "f24")]
+    #[serde(rename = "f24", deserialize_with = "deserialize_f64_flexible")]
     pub change_60d: f64,
-    #[serde(rename = "f25")]
+    #[serde(rename = "f25", deserialize_with = "deserialize_f64_flexible")]
     pub change_ytd: f64,
-    #[serde(rename = "f6")]
+    #[serde(rename = "f6", deserialize_with = "deserialize_f64_flexible")]
     pub turnover: f64,
-    #[serde(rename = "f62")]
+    #[serde(rename = "f62", deserialize_with = "deserialize_f64_flexible")]
     pub net: f64,
-    #[serde(rename = "f184")]
+    #[serde(rename = "f184", deserialize_with = "deserialize_f64_flexible")]
     pub main_rate: f64,
-    #[serde(rename = "f66")]
+    #[serde(rename = "f66", deserialize_with = "deserialize_f64_flexible")]
     pub super_net: f64,
-    #[serde(rename = "f72")]
+    #[serde(rename = "f72", deserialize_with = "deserialize_f64_flexible")]
     pub big_net: f64,
-    #[serde(rename = "f78")]
+    #[serde(rename = "f78", deserialize_with = "deserialize_f64_flexible")]
     pub mid_net: f64,
-    #[serde(rename = "f84")]
+    #[serde(rename = "f84", deserialize_with = "deserialize_f64_flexible")]
     pub small_net: f64,
-    #[serde(rename = "f263")]
+    #[serde(rename = "f263", deserialize_with = "deserialize_f64_flexible")]
     pub net_5d: f64,
-    #[serde(rename = "f264")]
+    #[serde(rename = "f264", deserialize_with = "deserialize_f64_flexible")]
     pub net_10d: f64,
     #[serde(rename = "f204", deserialize_with = "deserialize_i64_flexible")]
     pub up_count: i64,
@@ -122,7 +145,7 @@ pub struct EastmoneySector {
     pub down_count: i64,
     #[serde(rename = "f100")]
     pub leader_name: String,
-    #[serde(rename = "f26")]
+    #[serde(rename = "f26", deserialize_with = "deserialize_f64_flexible")]
     pub leader_change_pct: f64,
 }
 
