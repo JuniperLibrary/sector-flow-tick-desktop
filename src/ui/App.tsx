@@ -349,21 +349,21 @@ export const App: React.FC = () => {
 
       let resolvedCfg = cfg;
       const allSectorNames = sectorsWithType.map((s) => s.name);
+
+      // Recovery: if previous bug trimmed 21 hot sectors → ~5, restore to full hot list.
+      // This runs regardless of snapshot data — hot sectors are hardcoded and always valid.
+      if (cfg &&
+          resolvedCfg.selectedSectors.length < hotSectors.length &&
+          resolvedCfg.selectedSectors.every((s) => hotSectors.includes(s))) {
+        resolvedCfg = {...resolvedCfg, selectedSectors: [...hotSectors]};
+        await api.setConfig(resolvedCfg);
+      }
+
       if (cfg && allSectorNames.length > 0) {
         const allow = new Set(allSectorNames);
         const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
-
-        // Trim invalid sectors (removed from API)
         if (validSelected.length !== cfg.selectedSectors.length) {
           resolvedCfg = {...cfg, selectedSectors: validSelected};
-          await api.setConfig(resolvedCfg);
-        }
-
-        // Recovery: if previous bug trimmed 21 hot sectors → ~5, restore to full hot list
-        if (resolvedCfg.selectedSectors.length < hotSectors.length &&
-            resolvedCfg.selectedSectors.every((s) => hotSectors.includes(s)) &&
-            hotSectors.every((s) => allow.has(s))) {
-          resolvedCfg = {...resolvedCfg, selectedSectors: [...hotSectors]};
           await api.setConfig(resolvedCfg);
         }
 
