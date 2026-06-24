@@ -469,33 +469,39 @@ export const App: React.FC = () => {
 
       let resolvedCfg = cfg;
 
-      // Recovery: if previous bug trimmed 21 hot sectors → ~5, restore to full hot list.
-      // This runs regardless of snapshot data — hot sectors are hardcoded and always valid.
-      if (cfg &&
-          resolvedCfg.selectedSectors.length < hotSectors.length &&
-          resolvedCfg.selectedSectors.every((s) => hotSectors.includes(s))) {
-        resolvedCfg = {...resolvedCfg, selectedSectors: [...hotSectors]};
-        await api.setConfig(resolvedCfg);
-      }
-
-      // Validate selected sectors against ALL types' sector list combined,
+      // Step 1: Validate selected sectors against ALL types' sector list combined,
       // so cross-type default sectors (e.g. concept sectors in industry mode)
-      // are NOT incorrectly filtered out.
+      // are NOT incorrectly filtered out. Uses resolvedCfg so recovery below
+      // isn't overwritten.
       if (cfg && allSectorsCombined.length > 0) {
         const allow = new Set(allSectorsCombined);
-        const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
-        if (validSelected.length !== cfg.selectedSectors.length) {
-          resolvedCfg = {...cfg, selectedSectors: validSelected};
+        const validSelected = resolvedCfg.selectedSectors.filter((n) => allow.has(n));
+        if (validSelected.length !== resolvedCfg.selectedSectors.length) {
+          resolvedCfg = {...resolvedCfg, selectedSectors: validSelected};
           await api.setConfig(resolvedCfg);
         }
 
         // Empty selection → populate with valid hot sectors that exist in full list
-        if (cfg.selectedSectors.length === 0) {
+        if (resolvedCfg.selectedSectors.length === 0) {
           const hotInAll = hotSectors.filter((h) => allSectorsCombined.includes(h));
           if (hotInAll.length > 0) {
-            resolvedCfg = {...cfg, selectedSectors: hotInAll};
+            resolvedCfg = {...resolvedCfg, selectedSectors: hotInAll};
             await api.setConfig(resolvedCfg);
           }
+        }
+      }
+
+      // Step 2: Restore any missing hot sectors that were lost during previous
+      // field-ID-bug sessions, while preserving user-added custom sectors.
+      if (cfg && allSectorsCombined.length > 0) {
+        const existingSet = new Set(resolvedCfg.selectedSectors);
+        const missingHot = hotSectors.filter((h) => !existingSet.has(h) && allSectorsCombined.includes(h));
+        if (missingHot.length > 0) {
+          resolvedCfg = {
+            ...resolvedCfg,
+            selectedSectors: [...resolvedCfg.selectedSectors, ...missingHot],
+          };
+          await api.setConfig(resolvedCfg);
         }
       }
 
