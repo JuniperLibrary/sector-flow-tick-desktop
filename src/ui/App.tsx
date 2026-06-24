@@ -205,6 +205,74 @@ function buildRows(snapshot: TickSnapshot | null, seriesBySector: Record<string,
   });
 }
 
+/** Create a placeholder EastmoneySector for selected sectors not in current snapshot */
+function createPlaceholderSector(name: string, sectorTypeMap: Record<string, SectorType>, snapshotAt: number): EastmoneySector {
+  const sectorType = sectorTypeMap[name] || 'industry';
+  return {
+    name,
+    bkCode: '',
+    sectorType,
+    net: 0,
+    rate: 0,
+    changePct: 0,
+    superNet: 0,
+    bigNet: 0,
+    midNet: 0,
+    smallNet: 0,
+    turnover: 0,
+    turnoverRate: 0,
+    volumeRatio: 0,
+    speed: 0,
+    change60d: 0,
+    changeYtd: 0,
+    net5d: 0,
+    net10d: 0,
+    upCount: 0,
+    downCount: 0,
+    leaderStock: '',
+    leaderChangePct: 0,
+  };
+}
+
+/** Build rows including ALL selected sectors, with placeholders for missing ones */
+function buildRowsWithSelected(
+  snapshot: TickSnapshot | null,
+  seriesBySector: Record<string, SeriesPoint[]>,
+  selectedSectors: string[],
+  sectorTypeMap: Record<string, SectorType>
+): SectorRow[] {
+  if (!snapshot) {
+    // No snapshot at all - create placeholders for all selected sectors
+    const now = Date.now();
+    return selectedSectors.map((name) => ({
+      name,
+      latest: createPlaceholderSector(name, sectorTypeMap, now),
+      series: [],
+    }));
+  }
+
+  const snapshotSectors = new Map(snapshot.sectors.map((s) => [s.name, s]));
+  const now = snapshot.at;
+
+  // Start with sectors from snapshot that are selected
+  const rows: SectorRow[] = [];
+  for (const name of selectedSectors) {
+    const sector = snapshotSectors.get(name);
+    if (sector) {
+      const series = seriesBySector[name] ?? [{t: now, v: sector.net}];
+      rows.push({name, latest: sector, series});
+    } else {
+      // Selected but not in snapshot - create placeholder
+      rows.push({
+        name,
+        latest: createPlaceholderSector(name, sectorTypeMap, now),
+        series: seriesBySector[name] ?? [],
+      });
+    }
+  }
+  return rows;
+}
+
 function sortRows(rows: SectorRow[], sortState: SortState): SectorRow[] {
   const getValue = (row: SectorRow): number => {
     switch (sortState.field) {
@@ -319,6 +387,34 @@ export const App: React.FC = () => {
   const [alwaysOnTop, setAlwaysOnTop] = React.useState(false);
   const [detailSector, setDetailSector] = React.useState<EastmoneySector | null>(null);
   const [now, setNow] = React.useState(Date.now());
+  const tableScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const tablePanRef = React.useRef({
+    active: false,
+    moved: false,
+    pointerId: -1,
+    startX: 0,
+    startY: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+  });
+  const topScrollDragRef = React.useRef({
+    active: false,
+    pointerId: -1,
+    startX: 0,
+    startScrollLeft: 0,
+    trackWidth: 0,
+    thumbWidth: 0,
+  });
+  const topScrollTrackRef = React.useRef<HTMLDivElement | null>(null);
+  const [isTablePanning, setIsTablePanning] = React.useState(false);
+  const [isTopScrollDragging, setIsTopScrollDragging] = React.useState(false);
+  const [topScrollTrackWidth, setTopScrollTrackWidth] = React.useState(0);
+  const [tableScrollMetrics, setTableScrollMetrics] = React.useState({
+    scrollLeft: 0,
+    maxScrollLeft: 0,
+    clientWidth: 0,
+    scrollWidth: 0,
+  });
 
   const frozenBg = React.useMemo(() => theme === 'dark' ? '#0F172A' : '#FFFFFF', [theme]);
 
@@ -336,7 +432,8 @@ export const App: React.FC = () => {
         api.listAllSectorsWithType(),
         api.getHotSectors(),
       ]);
-      const allSectors = await api.listSectors(cfg?.sectorType ?? 'industry');
+      // Fetch FULL sector list from Eastmoney API (not snapshot-limited)
+      const allSectors = await api.getAllSectorsForType(cfg?.sectorType ?? 'industry');
       const sectorTypeMap: Record<string, SectorType> = {};
       for (const {name, sectorType} of sectorsWithType) {
         sectorTypeMap[name] = sectorType;
@@ -348,7 +445,6 @@ export const App: React.FC = () => {
       }
 
       let resolvedCfg = cfg;
-      const allSectorNames = sectorsWithType.map((s) => s.name);
 
       // Recovery: if previous bug trimmed 21 hot sectors → ~5, restore to full hot list.
       // This runs regardless of snapshot data — hot sectors are hardcoded and always valid.
@@ -359,17 +455,20 @@ export const App: React.FC = () => {
         await api.setConfig(resolvedCfg);
       }
 
-      if (cfg && allSectorNames.length > 0) {
-        const allow = new Set(allSectorNames);
+      // Validate selected sectors against the FULL sector list for the current type,
+      // NOT just the current snapshot. This prevents losing user selections when
+      // the snapshot temporarily has fewer sectors.
+      if (cfg && allSectors.length > 0) {
+        const allow = new Set(allSectors);
         const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
         if (validSelected.length !== cfg.selectedSectors.length) {
           resolvedCfg = {...cfg, selectedSectors: validSelected};
           await api.setConfig(resolvedCfg);
         }
 
-        // Empty selection → populate with valid hot sectors
+        // Empty selection → populate with valid hot sectors that exist in full list
         if (cfg.selectedSectors.length === 0) {
-          const hotInAll = hotSectors.filter((h) => allSectorNames.includes(h));
+          const hotInAll = hotSectors.filter((h) => allSectors.includes(h));
           if (hotInAll.length > 0) {
             resolvedCfg = {...cfg, selectedSectors: hotInAll};
             await api.setConfig(resolvedCfg);
@@ -391,10 +490,17 @@ export const App: React.FC = () => {
       unsubSnap = await api.onSnapshot((next) => {
         setState((s) => {
           const nextSeries = mergeSnapshotSeries(s.seriesBySector, next);
+          const nextTypeMap = {...s.sectorTypeMap};
+          for (const sector of next.sectors) {
+            if (!nextTypeMap[sector.name]) {
+              nextTypeMap[sector.name] = sector.sectorType;
+            }
+          }
           return {
             ...s,
             snapshot: next,
             seriesBySector: nextSeries,
+            sectorTypeMap: nextTypeMap,
           };
         });
       });
@@ -485,14 +591,16 @@ export const App: React.FC = () => {
 
   const allRows = React.useMemo(() => buildRows(snapshot, state.seriesBySector), [snapshot, state.seriesBySector]);
   const filteredRows = React.useMemo(() => {
-    const selectedSet = new Set(cfg?.selectedSectors ?? []);
-    let rows = selectedSet.size > 0
-      ? allRows.filter((row) => selectedSet.has(row.name))
+    const selectedSectors = cfg?.selectedSectors ?? [];
+    const selectedSet = new Set(selectedSectors);
+    // Use buildRowsWithSelected to include ALL selected sectors (with placeholders for missing)
+    let rows = selectedSectors.length > 0
+      ? buildRowsWithSelected(snapshot, state.seriesBySector, selectedSectors, sectorTypeMap)
       : allRows;
     const q = tableFilter.trim();
     if (q) rows = rows.filter((row) => row.name.includes(q));
     return rows;
-  }, [allRows, tableFilter, cfg?.selectedSectors]);
+  }, [snapshot, state.seriesBySector, cfg?.selectedSectors, tableFilter, sectorTypeMap]);
   const sortedRows = React.useMemo(() => sortRows(filteredRows, sortState), [filteredRows, sortState]);
 
   const counts = React.useMemo(() => {
@@ -537,8 +645,9 @@ export const App: React.FC = () => {
     if (!cfg) return;
     const nextCfg: TickConfig = {...cfg, sectorType: t};
     await api.setConfig(nextCfg);
+    // Fetch FULL sector list from Eastmoney API (not snapshot-limited)
     const [allSectors, sectorsWithType] = await Promise.all([
-      api.listSectors(t),
+      api.getAllSectorsForType(t),
       api.listAllSectorsWithType(),
     ]);
     const sectorTypeMap: Record<string, SectorType> = {};
@@ -564,6 +673,148 @@ export const App: React.FC = () => {
     await api.stopCollection();
     const next = await api.getCollectorStatus();
     setState((s) => ({...s, status: next}));
+  };
+
+  const updateTableScrollMetrics = React.useCallback(() => {
+    const el = tableScrollRef.current;
+    if (el) {
+      setTableScrollMetrics({
+        scrollLeft: el.scrollLeft,
+        maxScrollLeft: Math.max(0, el.scrollWidth - el.clientWidth),
+        clientWidth: el.clientWidth,
+        scrollWidth: el.scrollWidth,
+      });
+    }
+    if (topScrollTrackRef.current) {
+      setTopScrollTrackWidth(topScrollTrackRef.current.clientWidth);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    updateTableScrollMetrics();
+    const id = window.requestAnimationFrame(updateTableScrollMetrics);
+    return () => window.cancelAnimationFrame(id);
+  }, [updateTableScrollMetrics, sortedRows.length, colWidths]);
+
+  React.useEffect(() => {
+    const onResize = () => updateTableScrollMetrics();
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [updateTableScrollMetrics]);
+
+  const shouldIgnoreTablePan = (target: EventTarget | null): boolean => {
+    return target instanceof Element && Boolean(target.closest('button,input,select,textarea,a,[data-table-no-pan="true"]'));
+  };
+
+  const onTablePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = tableScrollRef.current;
+    if (e.button !== 0 || !el || shouldIgnoreTablePan(e.target) || el.scrollWidth <= el.clientWidth) {
+      return;
+    }
+    tablePanRef.current = {
+      active: true,
+      moved: false,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop,
+    };
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setIsTablePanning(true);
+  };
+
+  const onTablePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = tablePanRef.current;
+    const el = tableScrollRef.current;
+    if (!pan.active || !el || pan.pointerId !== e.pointerId) return;
+    const dx = e.clientX - pan.startX;
+    const dy = e.clientY - pan.startY;
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      pan.moved = true;
+    }
+    el.scrollLeft = pan.scrollLeft - dx;
+    el.scrollTop = pan.scrollTop - dy;
+    updateTableScrollMetrics();
+  };
+
+  const endTablePan = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = tablePanRef.current;
+    if (!pan.active || pan.pointerId !== e.pointerId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    pan.active = false;
+    setIsTablePanning(false);
+  };
+
+  const onTableClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!tablePanRef.current.moved) return;
+    e.preventDefault();
+    e.stopPropagation();
+    tablePanRef.current.moved = false;
+  };
+
+  const onTableScroll = () => {
+    updateTableScrollMetrics();
+  };
+
+  const scrollTableTo = (scrollLeft: number) => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const next = Math.max(0, Math.min(scrollLeft, el.scrollWidth - el.clientWidth));
+    el.scrollLeft = next;
+    updateTableScrollMetrics();
+  };
+
+  const getTopScrollGeometry = (trackEl: HTMLDivElement) => {
+    const {clientWidth, scrollWidth, maxScrollLeft} = tableScrollMetrics;
+    const trackWidth = trackEl.clientWidth;
+    const thumbWidth = scrollWidth > clientWidth
+      ? Math.max(72, (clientWidth / scrollWidth) * trackWidth)
+      : trackWidth;
+    const travel = Math.max(1, trackWidth - thumbWidth);
+    return {trackWidth, thumbWidth: Math.min(trackWidth, thumbWidth), travel, maxScrollLeft};
+  };
+
+  const onTopScrollTrackPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0 || tableScrollMetrics.maxScrollLeft <= 0) return;
+    const track = e.currentTarget;
+    const thumb = (e.target as Element).closest('[data-top-scroll-thumb="true"]');
+    const {trackWidth, thumbWidth, travel, maxScrollLeft} = getTopScrollGeometry(track);
+    if (!thumb) {
+      const rect = track.getBoundingClientRect();
+      const targetLeft = e.clientX - rect.left - thumbWidth / 2;
+      scrollTableTo((Math.max(0, Math.min(targetLeft, travel)) / travel) * maxScrollLeft);
+    }
+    topScrollDragRef.current = {
+      active: true,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      startScrollLeft: tableScrollRef.current?.scrollLeft ?? 0,
+      trackWidth,
+      thumbWidth,
+    };
+    track.setPointerCapture(e.pointerId);
+    setIsTopScrollDragging(true);
+  };
+
+  const onTopScrollTrackPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = topScrollDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    const travel = Math.max(1, drag.trackWidth - drag.thumbWidth);
+    const deltaScroll = ((e.clientX - drag.startX) / travel) * tableScrollMetrics.maxScrollLeft;
+    scrollTableTo(drag.startScrollLeft + deltaScroll);
+  };
+
+  const endTopScrollDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = topScrollDragRef.current;
+    if (!drag.active || drag.pointerId !== e.pointerId) return;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    drag.active = false;
+    setIsTopScrollDragging(false);
   };
 
   React.useEffect(() => {
@@ -595,6 +846,42 @@ export const App: React.FC = () => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [state.status?.state]);
+
+  if (!state.loaded) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: C.bgRoot,
+        color: C.textSec,
+        fontFamily: C.fontSans,
+        flexDirection: 'column',
+        gap: 16,
+      }}>
+        <div style={{
+          width: 28, height: 28,
+          border: `3px solid ${C.cyan}33`,
+          borderTopColor: C.cyan,
+          borderRadius: '50%',
+          animation: 'spin 0.8s linear infinite',
+        }} />
+        <div style={{fontSize: 13}}>正在连接采集服务…</div>
+        <style>{`
+          @keyframes spin { to { transform: rotate(360deg); } }
+        `}</style>
+      </div>
+    );
+  }
+
+  const hasHorizontalOverflow = tableScrollMetrics.maxScrollLeft > 1;
+  const topScrollThumbWidthPx = hasHorizontalOverflow && topScrollTrackWidth > 0
+    ? Math.min(topScrollTrackWidth, Math.max(72, (tableScrollMetrics.clientWidth / tableScrollMetrics.scrollWidth) * topScrollTrackWidth))
+    : topScrollTrackWidth;
+  const topScrollThumbLeftPx = hasHorizontalOverflow && topScrollTrackWidth > topScrollThumbWidthPx
+    ? (tableScrollMetrics.scrollLeft / tableScrollMetrics.maxScrollLeft) * (topScrollTrackWidth - topScrollThumbWidthPx)
+    : 0;
 
   return (
     <div
@@ -903,35 +1190,7 @@ export const App: React.FC = () => {
                             const t = sectorTypeMap[name];
                             const chipColor = t === 'concept' ? C.purple : t === 'region' ? C.teal : C.cyan;
                             const chipBg = t === 'concept' || t === 'region' ? `${chipColor}18` : `${chipColor}12`;
-  if (!state.loaded) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: C.bgRoot,
-        color: C.textSec,
-        fontFamily: C.fontSans,
-        flexDirection: 'column',
-        gap: 16,
-      }}>
-        <div style={{
-          width: 28, height: 28,
-          border: `3px solid ${C.cyan}33`,
-          borderTopColor: C.cyan,
-          borderRadius: '50%',
-          animation: 'spin 0.8s linear infinite',
-        }} />
-        <div style={{fontSize: 13}}>正在连接采集服务…</div>
-        <style>{`
-          @keyframes spin { to { transform: rotate(360deg); } }
-        `}</style>
-      </div>
-    );
-  }
-
-  return (
+                            return (
                               <div
                                 key={name}
                                 style={{
@@ -1083,24 +1342,82 @@ export const App: React.FC = () => {
             )}
 
             <div style={{display: 'grid', gridTemplateColumns: '1fr', minHeight: 0}}>
-              <div style={{overflow: 'auto'}}>
+              {hasHorizontalOverflow && (
+                <div
+                  ref={topScrollTrackRef}
+                  data-table-no-pan="true"
+                  onPointerDown={onTopScrollTrackPointerDown}
+                  onPointerMove={onTopScrollTrackPointerMove}
+                  onPointerUp={endTopScrollDrag}
+                  onPointerCancel={endTopScrollDrag}
+                  onLostPointerCapture={endTopScrollDrag}
+                  style={{
+                    margin: '8px 18px 10px',
+                    height: 20,
+                    borderRadius: 10,
+                    background: theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(15,23,42,0.10)',
+                    border: C.border,
+                    position: 'relative',
+                    cursor: isTopScrollDragging ? 'grabbing' : 'pointer',
+                    touchAction: 'none',
+                  }}
+                  title="拖动横向浏览表格"
+                >
+                  <div
+                    data-top-scroll-thumb="true"
+                    style={{
+                      position: 'absolute',
+                      left: topScrollTrackWidth > 0 ? topScrollThumbLeftPx : 0,
+                      top: 3,
+                      bottom: 3,
+                      width: topScrollTrackWidth > 0 ? topScrollThumbWidthPx : '100%',
+                      borderRadius: 8,
+                      background: isTopScrollDragging
+                        ? C.cyan
+                        : `linear-gradient(90deg, rgba(${C.cyanRgb},0.76), rgba(59,130,246,0.58))`,
+                      boxShadow: isTopScrollDragging ? C.cyanGlow : `0 2px 8px rgba(${C.cyanRgb},0.18)`,
+                    }}
+                  />
+                </div>
+              )}
+              <div
+                ref={tableScrollRef}
+                onPointerDown={onTablePointerDown}
+                onPointerMove={onTablePointerMove}
+                onPointerUp={endTablePan}
+                onPointerCancel={endTablePan}
+                onLostPointerCapture={endTablePan}
+                onClickCapture={onTableClickCapture}
+                onScroll={onTableScroll}
+                style={{
+                  overflow: 'auto',
+                  cursor: isTablePanning ? 'grabbing' : 'grab',
+                  userSelect: isTablePanning ? 'none' : undefined,
+                  overscrollBehavior: 'contain',
+                  touchAction: 'none',
+                }}
+              >
                   <table style={{borderCollapse: 'collapse', fontSize: 12, tableLayout: 'fixed'}}>
                     <colgroup>
                       {[
+                        // Fixed columns (sticky left)
                         {label: '板块', w: 110},
                         {label: '代码', w: 68},
                         {label: '类型', w: 50},
+                        // Core fund flow metrics - most important on the left
                         {label: '涨跌幅', w: 68},
-                        {label: '换手率', w: 64},
-                        {label: '量比', w: 56},
-                        {label: '涨速', w: 56},
-                        {label: '60日涨幅', w: 72},
-                        {label: '年初至今', w: 72},
-                        {label: '成交额(亿)', w: 80},
                         {label: '最新净流入(亿)', w: 102},
                         {label: '主力净占比', w: 72},
                         {label: '超大单(亿)', w: 80},
                         {label: '大单(亿)', w: 76},
+                        // Activity & liquidity metrics
+                        {label: '换手率', w: 64},
+                        {label: '量比', w: 56},
+                        {label: '成交额(亿)', w: 80},
+                        // Other metrics
+                        {label: '涨速', w: 56},
+                        {label: '60日涨幅', w: 72},
+                        {label: '年初至今', w: 72},
                         {label: '中单(亿)', w: 76},
                         {label: '小单(亿)', w: 76},
                         {label: '5日主力(亿)', w: 88},
@@ -1143,26 +1460,29 @@ export const App: React.FC = () => {
                           </div>
                         </th>
                         {[
+                          // Core fund flow metrics - most important on the left
                           {label: '涨跌幅', title: '板块今日涨跌幅（f3）', field: 'ChangePct' as SortField},
-                          {label: '换手率', title: '板块换手率（f8）', field: 'TurnoverRate' as SortField},
-                          {label: '量比', title: '板块量比（f10）', field: 'VolumeRatio' as SortField},
-                          {label: '涨速', title: '板块当前涨速（f22）', field: 'Speed' as SortField},
-                          {label: '60日涨幅', title: '60日涨跌幅（f24）', field: 'Change60d' as SortField},
-                          {label: '年初至今', title: '年初至今涨跌幅（f25）', field: 'ChangeYtd' as SortField},
-                          {label: '成交额(亿)', title: '板块今日成交额（f6）', field: 'Turnover' as SortField},
                           {label: '最新净流入(亿)', title: '今日主力净流入额（f62），主力=超大单+大单', field: 'Net' as SortField},
                           {label: '主力净占比', title: '主力净流入占成交额比重（f184）', field: 'MainRate' as SortField},
                           {label: '超大单(亿)', title: '今日超大单净流入额（f66），≥100万股或≥500万元', field: 'SuperNet' as SortField},
                           {label: '大单(亿)', title: '今日大单净流入额（f72），≥2万股或≥20万元', field: 'BigNet' as SortField},
+                          // Activity & liquidity metrics
+                          {label: '换手率', title: '板块换手率（f8）', field: 'TurnoverRate' as SortField},
+                          {label: '量比', title: '板块量比（f10）', field: 'VolumeRatio' as SortField},
+                          {label: '成交额(亿)', title: '板块今日成交额（f6）', field: 'Turnover' as SortField},
+                          // Other metrics
+                          {label: '涨速', title: '板块当前涨速（f22）', field: 'Speed' as SortField},
+                          {label: '60日涨幅', title: '60日涨跌幅（f24）', field: 'Change60d' as SortField},
+                          {label: '年初至今', title: '年初至今涨跌幅（f25）', field: 'ChangeYtd' as SortField},
                           {label: '中单(亿)', title: '今日中单净流入额（f78）', field: 'MidNet' as SortField},
                           {label: '小单(亿)', title: '今日小单净流入额（f84）', field: 'SmallNet' as SortField},
                           {label: '5日主力(亿)', title: '近5日主力净流入额合计（f263）', field: 'Net5d' as SortField},
                           {label: '10日主力(亿)', title: '近10日主力净流入额合计（f264）', field: 'Net10d' as SortField},
                           {label: '上涨', title: '板块内上涨家数（f104）', field: 'UpCount' as SortField},
                           {label: '下跌', title: '板块内下跌家数（f105）', field: 'DownCount' as SortField},
-                          {label: '家数差', title: '上涨家数-下跌家数（f225）', field: 'UpDownDiff' as SortField},
-                          {label: '领涨股', title: '板块内涨幅最大的股票（f204）', field: null},
-                          {label: '领涨涨幅', title: '领涨股今日涨幅（f205）', field: 'LeaderChangePct' as SortField},
+                          {label: '家数差', title: '上涨家数-下跌家数', field: 'UpDownDiff' as SortField},
+                          {label: '领涨股', title: '板块内领涨股票（f128）', field: null},
+                          {label: '领涨涨幅', title: '领涨股今日涨幅（f136）', field: 'LeaderChangePct' as SortField},
                         ].map((col) => (
                           <th key={col.label} title={col.title} style={{
                             position: 'relative',
@@ -1185,6 +1505,7 @@ export const App: React.FC = () => {
                               ) : <>{col.label}</>}
                             </span>
                             <div
+                              data-table-no-pan="true"
                               onMouseDown={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
@@ -1270,67 +1591,70 @@ export const App: React.FC = () => {
                                   </span>
                                 </div>
                               </div>
-                            </td>
+</td>
+                             {/* Core fund flow metrics - most important on the left */}
                              <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.changePct), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRate(row.latest.changePct)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: C.textSec, fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRatio(row.latest.turnoverRate)}%
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: C.textSec, fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRatio(row.latest.volumeRatio)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.speed), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRate(row.latest.speed)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.change60d), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRate(row.latest.change60d)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.changeYtd), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRate(row.latest.changeYtd)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: C.textSec, fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.turnover)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.net), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.net)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.rate), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRate(row.latest.rate)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.superNet), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.superNet)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.bigNet), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.bigNet)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.midNet), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.midNet)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.smallNet), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.smallNet)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.net5d), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.net5d)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.net10d), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatVal(row.latest.net10d)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: C.red, fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatCount(row.latest.upCount)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: C.green, fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatCount(row.latest.downCount)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.upCount - row.latest.downCount), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatDiff(row.latest.upCount - row.latest.downCount)}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: C.text, fontFamily: C.fontSans, fontSize: 12, whiteSpace: 'nowrap'}}>
-                              {row.latest.leaderStock || '—'}
-                            </td>
-                            <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.leaderChangePct), fontFamily: C.fontMono, fontSize: 13}}>
-                              {formatRate(row.latest.leaderChangePct)}
-                            </td>
+                               {formatRate(row.latest.changePct)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.net), fontFamily: C.fontMono, fontSize: 13, fontWeight: 600}}>
+                               {formatVal(row.latest.net)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.rate), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatRate(row.latest.rate)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.superNet), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatVal(row.latest.superNet)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.bigNet), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatVal(row.latest.bigNet)}
+                             </td>
+                             {/* Activity & liquidity metrics */}
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.textSec, fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatRatio(row.latest.turnoverRate)}%
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.textSec, fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatRatio(row.latest.volumeRatio)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.textSec, fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatVal(row.latest.turnover)}
+                             </td>
+                             {/* Other metrics */}
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.speed), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatRate(row.latest.speed)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.change60d), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatRate(row.latest.change60d)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.changeYtd), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatRate(row.latest.changeYtd)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.midNet), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatVal(row.latest.midNet)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.smallNet), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatVal(row.latest.smallNet)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.net5d), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatVal(row.latest.net5d)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.net10d), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatVal(row.latest.net10d)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.red, fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatCount(row.latest.upCount)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.green, fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatCount(row.latest.downCount)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.upCount - row.latest.downCount), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatDiff(row.latest.upCount - row.latest.downCount)}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: C.text, fontFamily: C.fontSans, fontSize: 12, whiteSpace: 'nowrap'}}>
+                               {row.latest.leaderStock || '—'}
+                             </td>
+                             <td style={{padding: '10px 12px', textAlign: 'right', color: netTextColor(row.latest.leaderChangePct), fontFamily: C.fontMono, fontSize: 13}}>
+                               {formatRate(row.latest.leaderChangePct)}
+                             </td>
                             </tr>
                         );
                       })
@@ -1431,15 +1755,15 @@ export const App: React.FC = () => {
                 {label: '涨速', value: formatRate(detailSector.speed), color: netTextColor(detailSector.speed)},
                 {label: '60日涨幅', value: formatRate(detailSector.change60d), color: netTextColor(detailSector.change60d)},
                 {label: '年初至今', value: formatRate(detailSector.changeYtd), color: netTextColor(detailSector.changeYtd)},
-                {label: '成交额', value: formatVal(detailSector.turnover), color: C.textSec},
-                {label: '净流入', value: formatVal(detailSector.net), color: netTextColor(detailSector.net)},
+                {label: '成交额', value: formatNet(detailSector.turnover), color: C.textSec},
+                {label: '净流入', value: formatNet(detailSector.net), color: netTextColor(detailSector.net)},
                 {label: '主力净占比', value: formatRate(detailSector.rate), color: netTextColor(detailSector.rate)},
-                {label: '超大宗净流入', value: formatVal(detailSector.superNet), color: netTextColor(detailSector.superNet)},
-                {label: '大宗净流入', value: formatVal(detailSector.bigNet), color: netTextColor(detailSector.bigNet)},
-                {label: '中单净流入', value: formatVal(detailSector.midNet), color: netTextColor(detailSector.midNet)},
-                {label: '小单净流入', value: formatVal(detailSector.smallNet), color: netTextColor(detailSector.smallNet)},
-                {label: '5日净流入', value: formatVal(detailSector.net5d), color: netTextColor(detailSector.net5d)},
-                {label: '10日净流入', value: formatVal(detailSector.net10d), color: netTextColor(detailSector.net10d)},
+                {label: '超大宗净流入', value: formatNet(detailSector.superNet), color: netTextColor(detailSector.superNet)},
+                {label: '大宗净流入', value: formatNet(detailSector.bigNet), color: netTextColor(detailSector.bigNet)},
+                {label: '中单净流入', value: formatNet(detailSector.midNet), color: netTextColor(detailSector.midNet)},
+                {label: '小单净流入', value: formatNet(detailSector.smallNet), color: netTextColor(detailSector.smallNet)},
+                {label: '5日净流入', value: formatNet(detailSector.net5d), color: netTextColor(detailSector.net5d)},
+                {label: '10日净流入', value: formatNet(detailSector.net10d), color: netTextColor(detailSector.net10d)},
                 {label: '上涨家数', value: formatCount(detailSector.upCount), color: C.red},
                 {label: '下跌家数', value: formatCount(detailSector.downCount), color: C.green},
                 {label: '涨跌差', value: formatDiff(detailSector.upCount - detailSector.downCount), color: netTextColor(detailSector.upCount - detailSector.downCount)},
