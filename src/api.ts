@@ -35,6 +35,14 @@ export async function getAllSectorsForType(sectorType: SectorType): Promise<stri
   return invoke('get_all_sectors_for_type', {sectorType});
 }
 
+export async function getAllSectorsFromStore(): Promise<SectorWithType[]> {
+  return invoke('get_all_sectors_from_store');
+}
+
+export async function refreshSectorsFromStore(): Promise<SectorWithType[]> {
+  return invoke('refresh_sectors_from_store');
+}
+
 export async function listAllSectorsWithType(): Promise<SectorWithType[]> {
   return invoke('list_all_sectors_with_type');
 }
