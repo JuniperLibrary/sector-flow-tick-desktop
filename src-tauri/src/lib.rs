@@ -2,6 +2,7 @@ mod collector;
 mod config;
 mod eastmoney;
 mod models;
+mod sector_store;
 
 use std::collections::HashMap;
 use std::sync::atomic::Ordering;
@@ -94,6 +95,20 @@ async fn list_all_sectors() -> Result<Vec<String>, String> {
 async fn get_all_sectors_for_type(sector_type: SectorType) -> Result<Vec<String>, String> {
     // Fetch full sector list from Eastmoney API (not from snapshot)
     eastmoney::fetch_sectors(&sector_type).await.map(|sectors| sectors.into_iter().map(|s| s.name).collect())
+}
+
+#[tauri::command]
+async fn get_all_sectors_from_store(app: AppHandle) -> Result<Vec<SectorWithType>, String> {
+    let records = sector_store::load(&app);
+    if !records.is_empty() {
+        return Ok(records);
+    }
+    Ok(sector_store::refresh(&app).await)
+}
+
+#[tauri::command]
+async fn refresh_sectors_from_store(app: AppHandle) -> Result<Vec<SectorWithType>, String> {
+    Ok(sector_store::refresh(&app).await)
 }
 
 #[tauri::command]
@@ -265,6 +280,8 @@ pub fn run() {
             toggle_always_on_top,
             get_initial_data,
             get_all_sectors_for_type,
+            get_all_sectors_from_store,
+            refresh_sectors_from_store,
         ])
         .setup(|app| {
             log::info!("app started");
@@ -334,6 +351,11 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 collector::start_collector(handle);
+            });
+
+            let handle2 = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                sector_store::refresh(&handle2).await;
             });
             Ok(())
         })

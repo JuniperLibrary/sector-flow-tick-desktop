@@ -98,15 +98,14 @@ fn deserialize_i64_flexible<'de, D>(deserializer: D) -> Result<i64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum I64OrString {
-        I64(i64),
-        S(String),
-    }
-    match I64OrString::deserialize(deserializer)? {
-        I64OrString::I64(v) => Ok(v),
-        I64OrString::S(s) => Ok(s.parse::<i64>().unwrap_or(0)),
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::Number(n) => Ok(n.as_i64().unwrap_or(0)),
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() || t == "-" { Ok(0) } else { Ok(s.parse::<i64>().unwrap_or(0)) }
+        }
+        _ => Ok(0),
     }
 }
 
@@ -114,22 +113,14 @@ fn deserialize_f64_flexible<'de, D>(deserializer: D) -> Result<f64, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum F64OrString {
-        F64(f64),
-        S(String),
-    }
-    match F64OrString::deserialize(deserializer)? {
-        F64OrString::F64(v) => Ok(v),
-        F64OrString::S(s) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() || trimmed == "-" {
-                Ok(0.0)
-            } else {
-                Ok(s.parse::<f64>().unwrap_or(0.0))
-            }
+    let val = serde_json::Value::deserialize(deserializer)?;
+    match val {
+        serde_json::Value::Number(n) => Ok(n.as_f64().unwrap_or(0.0)),
+        serde_json::Value::String(s) => {
+            let t = s.trim();
+            if t.is_empty() || t == "-" { Ok(0.0) } else { Ok(s.parse::<f64>().unwrap_or(0.0)) }
         }
+        _ => Ok(0.0),
     }
 }
 
@@ -173,7 +164,7 @@ pub struct EastmoneySector {
     pub up_count: i64,
     #[serde(rename = "f205", deserialize_with = "deserialize_i64_flexible")]
     pub down_count: i64,
-    #[serde(rename = "f100")]
+    #[serde(rename = "f100", default)]
     pub leader_name: String,
     #[serde(rename = "f26", deserialize_with = "deserialize_f64_flexible")]
     pub leader_change_pct: f64,
