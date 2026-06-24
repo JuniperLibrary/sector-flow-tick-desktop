@@ -432,11 +432,34 @@ export const App: React.FC = () => {
         api.listAllSectorsWithType(),
         api.getHotSectors(),
       ]);
-      // Fetch FULL sector list from Eastmoney API (not snapshot-limited)
-      const allSectors = await api.getAllSectorsForType(cfg?.sectorType ?? 'industry');
+      // Fetch ALL sector types in parallel to build complete sector list + type map
+      const currentType = cfg?.sectorType ?? 'industry';
+      const allTypes: SectorType[] = ['industry', 'concept', 'region'];
+      const [industrySectors, conceptSectors, regionSectors] = await Promise.all(
+        allTypes.map((t) => api.getAllSectorsForType(t))
+      );
+      const allSectorsByType: Record<SectorType, string[]> = {
+        industry: industrySectors,
+        concept: conceptSectors,
+        region: regionSectors,
+      };
+      // allSectors for picker = current type only (when user filters by type)
+      const allSectors = allSectorsByType[currentType] ?? [];
+      // allSectorsCombined for validation = all types (so cross-type defaults aren't filtered out)
+      const allSectorsCombined = [...industrySectors, ...conceptSectors, ...regionSectors];
+
+      // Build sectorTypeMap from API data (complete, not snapshot-dependent)
       const sectorTypeMap: Record<string, SectorType> = {};
+      for (const [t, names] of Object.entries(allSectorsByType)) {
+        for (const name of names) {
+          sectorTypeMap[name] = t as SectorType;
+        }
+      }
+      // Also merge from snapshot-based sectorsWithType (may have additional entries)
       for (const {name, sectorType} of sectorsWithType) {
-        sectorTypeMap[name] = sectorType;
+        if (!sectorTypeMap[name]) {
+          sectorTypeMap[name] = sectorType;
+        }
       }
 
       let initialSeries: Record<string, SeriesPoint[]> = {};
@@ -455,11 +478,11 @@ export const App: React.FC = () => {
         await api.setConfig(resolvedCfg);
       }
 
-      // Validate selected sectors against the FULL sector list for the current type,
-      // NOT just the current snapshot. This prevents losing user selections when
-      // the snapshot temporarily has fewer sectors.
-      if (cfg && allSectors.length > 0) {
-        const allow = new Set(allSectors);
+      // Validate selected sectors against ALL types' sector list combined,
+      // so cross-type default sectors (e.g. concept sectors in industry mode)
+      // are NOT incorrectly filtered out.
+      if (cfg && allSectorsCombined.length > 0) {
+        const allow = new Set(allSectorsCombined);
         const validSelected = cfg.selectedSectors.filter((n) => allow.has(n));
         if (validSelected.length !== cfg.selectedSectors.length) {
           resolvedCfg = {...cfg, selectedSectors: validSelected};
@@ -468,7 +491,7 @@ export const App: React.FC = () => {
 
         // Empty selection → populate with valid hot sectors that exist in full list
         if (cfg.selectedSectors.length === 0) {
-          const hotInAll = hotSectors.filter((h) => allSectors.includes(h));
+          const hotInAll = hotSectors.filter((h) => allSectorsCombined.includes(h));
           if (hotInAll.length > 0) {
             resolvedCfg = {...cfg, selectedSectors: hotInAll};
             await api.setConfig(resolvedCfg);
@@ -585,7 +608,7 @@ export const App: React.FC = () => {
 
   const pickerOptions = React.useMemo(() => {
     const q = pickerSearch.trim();
-    if (!q) return [];
+    if (!q) return state.allSectors;
     return state.allSectors.filter((n) => n.includes(q)).slice(0, 5);
   }, [pickerSearch, state.allSectors]);
 
@@ -645,21 +668,34 @@ export const App: React.FC = () => {
     if (!cfg) return;
     const nextCfg: TickConfig = {...cfg, sectorType: t};
     await api.setConfig(nextCfg);
-    // Fetch FULL sector list from Eastmoney API (not snapshot-limited)
-    const [allSectors, sectorsWithType] = await Promise.all([
+    // Fetch current type's sector list for the picker
+    const [currentSectors, sectorsWithType] = await Promise.all([
       api.getAllSectorsForType(t),
       api.listAllSectorsWithType(),
     ]);
-    const sectorTypeMap: Record<string, SectorType> = {};
-    for (const {name, sectorType} of sectorsWithType) {
-      sectorTypeMap[name] = sectorType;
-    }
-    setState((s) => ({
-      ...s,
-      config: nextCfg,
-      allSectors,
-      sectorTypeMap,
-    }));
+    // Merge new type's sectors into existing sectorTypeMap (don't replace)
+    const currentTypeSectors = currentSectors;
+    setState((s) => {
+      const nextTypeMap = {...s.sectorTypeMap};
+      // All sectors from API for this type are guaranteed to be this type
+      for (const name of currentTypeSectors) {
+        if (!nextTypeMap[name]) {
+          nextTypeMap[name] = t;
+        }
+      }
+      // Also merge from snapshot data
+      for (const {name, sectorType} of sectorsWithType) {
+        if (!nextTypeMap[name]) {
+          nextTypeMap[name] = sectorType;
+        }
+      }
+      return {
+        ...s,
+        config: nextCfg,
+        allSectors: currentTypeSectors,
+        sectorTypeMap: nextTypeMap,
+      };
+    });
   };
 
   const onStart = async () => {
