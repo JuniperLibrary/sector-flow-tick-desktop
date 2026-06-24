@@ -1514,11 +1514,11 @@ export const App: React.FC = () => {
                           {label: '小单(亿)', title: '今日小单净流入额（f84）', field: 'SmallNet' as SortField},
                           {label: '5日主力(亿)', title: '近5日主力净流入额合计（f263）', field: 'Net5d' as SortField},
                           {label: '10日主力(亿)', title: '近10日主力净流入额合计（f264）', field: 'Net10d' as SortField},
-                          {label: '上涨', title: '板块内上涨家数（f104）', field: 'UpCount' as SortField},
-                          {label: '下跌', title: '板块内下跌家数（f105）', field: 'DownCount' as SortField},
+                          {label: '上涨', title: '板块内上涨家数（f204）', field: 'UpCount' as SortField},
+                          {label: '下跌', title: '板块内下跌家数（f205）', field: 'DownCount' as SortField},
                           {label: '家数差', title: '上涨家数-下跌家数', field: 'UpDownDiff' as SortField},
-                          {label: '领涨股', title: '板块内领涨股票（f128）', field: null},
-                          {label: '领涨涨幅', title: '领涨股今日涨幅（f136）', field: 'LeaderChangePct' as SortField},
+                          {label: '领涨股', title: '板块内领涨股票（f100）', field: null},
+                          {label: '领涨涨幅', title: '领涨股今日涨幅（f26）', field: 'LeaderChangePct' as SortField},
                         ].map((col) => (
                           <th key={col.label} title={col.title} style={{
                             position: 'relative',

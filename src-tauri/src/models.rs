@@ -169,13 +169,13 @@ pub struct EastmoneySector {
     pub net_5d: f64,
     #[serde(rename = "f264", deserialize_with = "deserialize_f64_flexible")]
     pub net_10d: f64,
-    #[serde(rename = "f104", deserialize_with = "deserialize_i64_flexible")]
+    #[serde(rename = "f204", deserialize_with = "deserialize_i64_flexible")]
     pub up_count: i64,
-    #[serde(rename = "f105", deserialize_with = "deserialize_i64_flexible")]
+    #[serde(rename = "f205", deserialize_with = "deserialize_i64_flexible")]
     pub down_count: i64,
-    #[serde(rename = "f128")]
+    #[serde(rename = "f100")]
     pub leader_name: String,
-    #[serde(rename = "f136", deserialize_with = "deserialize_f64_flexible")]
+    #[serde(rename = "f26", deserialize_with = "deserialize_f64_flexible")]
     pub leader_change_pct: f64,
 }
 
