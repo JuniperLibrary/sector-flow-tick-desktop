@@ -31,6 +31,10 @@ export async function listSectors(sectorType: SectorType): Promise<string[]> {
   return invoke('list_sectors', {sectorType});
 }
 
+export async function getAllSectorsForType(sectorType: SectorType): Promise<string[]> {
+  return invoke('get_all_sectors_for_type', {sectorType});
+}
+
 export async function listAllSectorsWithType(): Promise<SectorWithType[]> {
   return invoke('list_all_sectors_with_type');
 }

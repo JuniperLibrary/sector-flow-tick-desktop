@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+const YUAN_PER_YI: f64 = 100_000_000.0;
+
+fn yuan_to_yi(v: f64) -> f64 {
+    v / YUAN_PER_YI
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SectorType {
@@ -18,7 +24,11 @@ impl SectorType {
     }
 
     pub fn all() -> Vec<SectorType> {
-        vec![SectorType::Industry, SectorType::Concept, SectorType::Region]
+        vec![
+            SectorType::Industry,
+            SectorType::Concept,
+            SectorType::Region,
+        ]
     }
 }
 
@@ -37,18 +47,38 @@ pub struct TickConfig {
     pub alert_threshold: f64,
 }
 
-fn default_interval() -> u64 { 60 }
-fn default_sector_type() -> SectorType { SectorType::Industry }
-fn default_alert_threshold() -> f64 { 2.0 }
+fn default_interval() -> u64 {
+    60
+}
+fn default_sector_type() -> SectorType {
+    SectorType::Industry
+}
+fn default_alert_threshold() -> f64 {
+    2.0
+}
 fn default_selected() -> Vec<String> {
     vec![
-        "半导体".into(), "AI应用".into(), "CPO概念".into(),
-        "有色金属".into(), "锂矿概念".into(), "商业航天".into(),
-        "电池".into(), "机器人".into(), "创新药".into(),
-        "白酒".into(), "消费电子".into(), "银行".into(),
-        "人工智能".into(), "云计算".into(), "低空经济".into(),
-        "电网设备".into(), "通信设备".into(), "传媒".into(),
-        "国产芯片".into(), "元件".into(), "通信服务".into(),
+        "半导体".into(),
+        "AI应用".into(),
+        "CPO概念".into(),
+        "有色金属".into(),
+        "锂矿概念".into(),
+        "商业航天".into(),
+        "电池".into(),
+        "机器人".into(),
+        "创新药".into(),
+        "白酒".into(),
+        "消费电子".into(),
+        "银行".into(),
+        "人工智能".into(),
+        "云计算".into(),
+        "低空经济".into(),
+        "电网设备".into(),
+        "通信设备".into(),
+        "传媒".into(),
+        "国产芯片".into(),
+        "元件".into(),
+        "通信服务".into(),
     ]
 }
 
@@ -139,19 +169,20 @@ pub struct EastmoneySector {
     pub net_5d: f64,
     #[serde(rename = "f264", deserialize_with = "deserialize_f64_flexible")]
     pub net_10d: f64,
-    #[serde(rename = "f204", deserialize_with = "deserialize_i64_flexible")]
+    #[serde(rename = "f104", deserialize_with = "deserialize_i64_flexible")]
     pub up_count: i64,
-    #[serde(rename = "f205", deserialize_with = "deserialize_i64_flexible")]
+    #[serde(rename = "f105", deserialize_with = "deserialize_i64_flexible")]
     pub down_count: i64,
-    #[serde(rename = "f100")]
+    #[serde(rename = "f128")]
     pub leader_name: String,
-    #[serde(rename = "f26", deserialize_with = "deserialize_f64_flexible")]
+    #[serde(rename = "f136", deserialize_with = "deserialize_f64_flexible")]
     pub leader_change_pct: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SectorSnapshot {
+    pub at: i64,
     pub name: String,
     #[serde(rename = "bkCode")]
     pub code: String,
@@ -195,26 +226,27 @@ pub struct SectorSnapshot {
 }
 
 impl From<(&EastmoneySector, SectorType, i64)> for SectorSnapshot {
-    fn from((r, st, _at): (&EastmoneySector, SectorType, i64)) -> Self {
+    fn from((r, st, at): (&EastmoneySector, SectorType, i64)) -> Self {
         Self {
+            at,
             name: r.name.clone(),
             code: r.code.clone(),
             sector_type: st,
-            net: r.net,
+            net: yuan_to_yi(r.net),
             change_pct: r.change_pct,
             turnover_rate: r.turnover_rate,
             volume_ratio: r.volume_ratio,
             speed: r.speed,
             change_60d: r.change_60d,
             change_ytd: r.change_ytd,
-            turnover: r.turnover,
+            turnover: yuan_to_yi(r.turnover),
             main_rate: r.main_rate,
-            super_net: r.super_net,
-            big_net: r.big_net,
-            mid_net: r.mid_net,
-            small_net: r.small_net,
-            net_5d: r.net_5d,
-            net_10d: r.net_10d,
+            super_net: yuan_to_yi(r.super_net),
+            big_net: yuan_to_yi(r.big_net),
+            mid_net: yuan_to_yi(r.mid_net),
+            small_net: yuan_to_yi(r.small_net),
+            net_5d: yuan_to_yi(r.net_5d),
+            net_10d: yuan_to_yi(r.net_10d),
             up_count: r.up_count,
             down_count: r.down_count,
             leader_name: r.leader_name.clone(),

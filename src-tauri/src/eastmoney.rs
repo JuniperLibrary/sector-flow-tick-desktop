@@ -6,7 +6,8 @@ const EASTMONEY_BASE: &str = "https://push2.eastmoney.com/api/qt/clist/get";
 
 pub async fn fetch_sectors(sector_type: &SectorType) -> Result<Vec<EastmoneySector>, String> {
     let fs_param = sector_type.as_fs_param();
-    let po_fields = "f2,f3,f6,f8,f10,f12,f14,f22,f24,f25,f62,f66,f72,f78,f84,f100,f184,f204,f205,f26,f263,f264";
+    let po_fields =
+        "f2,f3,f6,f8,f10,f12,f14,f22,f24,f25,f62,f66,f72,f78,f84,f104,f105,f128,f136,f184,f263,f264";
     let url = format!(
         "{}?pn=1&pz=500&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&wbp2u=|&fid=f3&fs={}&fields={}",
         EASTMONEY_BASE, fs_param, po_fields
@@ -40,7 +41,11 @@ pub async fn fetch_sectors(sector_type: &SectorType) -> Result<Vec<EastmoneySect
 
     let mut sectors: Vec<EastmoneySector> = Vec::with_capacity(data.len());
     for item in data {
-        let name = item.get("f14").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let name = item
+            .get("f14")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         if name.is_empty() {
             continue;
         }
@@ -55,11 +60,7 @@ pub async fn fetch_sectors(sector_type: &SectorType) -> Result<Vec<EastmoneySect
     Ok(sectors)
 }
 
-pub fn compute_series(
-    history: &[SectorSnapshot],
-    name: &str,
-    field: &str,
-) -> Vec<SeriesPoint> {
+pub fn compute_series(history: &[SectorSnapshot], name: &str, field: &str) -> Vec<SeriesPoint> {
     let snapshots: Vec<&SectorSnapshot> = history.iter().filter(|s| s.name == name).collect();
     if snapshots.is_empty() {
         return vec![];
@@ -74,15 +75,12 @@ pub fn compute_series(
             "turnover" => snap.turnover,
             _ => 0.0,
         };
-        points.push(SeriesPoint { t: snap.code.parse().unwrap_or(0), v });
+        points.push(SeriesPoint { t: snap.at, v });
     }
     points
 }
 
-pub fn all_series(
-    history: &[SectorSnapshot],
-    field: &str,
-) -> HashMap<String, Vec<SeriesPoint>> {
+pub fn all_series(history: &[SectorSnapshot], field: &str) -> HashMap<String, Vec<SeriesPoint>> {
     let mut names: Vec<String> = history.iter().map(|s| s.name.clone()).collect();
     names.sort();
     names.dedup();

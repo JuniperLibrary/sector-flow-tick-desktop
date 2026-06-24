@@ -91,6 +91,12 @@ async fn list_all_sectors() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
+async fn get_all_sectors_for_type(sector_type: SectorType) -> Result<Vec<String>, String> {
+    // Fetch full sector list from Eastmoney API (not from snapshot)
+    eastmoney::fetch_sectors(&sector_type).await.map(|sectors| sectors.into_iter().map(|s| s.name).collect())
+}
+
+#[tauri::command]
 async fn list_all_sectors_with_type(
     snapshots: State<'_, collector::SnapshotsState>,
 ) -> Result<Vec<SectorWithType>, String> {
@@ -258,6 +264,7 @@ pub fn run() {
             stop_collection,
             toggle_always_on_top,
             get_initial_data,
+            get_all_sectors_for_type,
         ])
         .setup(|app| {
             log::info!("app started");
