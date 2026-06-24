@@ -3,6 +3,7 @@ import type {AlertEvent, SectorType, SeriesPoint, TickConfig} from '../types';
 import type {EastmoneySector, TickSnapshot, CollectorStatus} from '../types';
 import * as api from '../api';
 import {TrendChart, MultiSeries} from './TrendChart';
+import {SectorSelectorModal} from './SectorSelectorModal';
 
 // ─── Theme System ───────────────────────────────────────────────
 type ThemeVars = {
@@ -103,7 +104,7 @@ const FALLBACK_HOT_SECTORS: readonly string[] = [
 ];
 
 type ViewState = {
-  allSectors: string[];
+  allSectorsByType: Record<SectorType, string[]>;
   loaded: boolean;
   sectorTypeMap: Record<string, SectorType>;
   config: TickConfig | null;
@@ -254,10 +255,11 @@ function buildRowsWithSelected(
   const snapshotSectors = new Map(snapshot.sectors.map((s) => [s.name, s]));
   const now = snapshot.at;
 
-  // Start with sectors from snapshot that are selected
+  const missing: string[] = [];
   const rows: SectorRow[] = [];
   for (const name of selectedSectors) {
     const sector = snapshotSectors.get(name);
+    if (!sector) missing.push(name);
     if (sector) {
       const series = seriesBySector[name] ?? [{t: now, v: sector.net}];
       rows.push({name, latest: sector, series});
@@ -268,6 +270,16 @@ function buildRowsWithSelected(
         latest: createPlaceholderSector(name, sectorTypeMap, now),
         series: seriesBySector[name] ?? [],
       });
+    }
+  }
+  if (missing.length > 0) {
+    console.log('[buildRowsWithSelected] missing from snapshot:', missing.join(', '));
+    // Look for similarly named sectors in the snapshot (helps debug API name changes)
+    for (const m of missing) {
+      const similar = snapshot.sectors.filter((s) => s.name.includes(m.slice(0, 2)) || m.includes(s.name.slice(0, 2)));
+      if (similar.length > 0) {
+        console.log('  similar names for "' + m + '":', similar.map((s) => s.name));
+      }
     }
   }
   return rows;
@@ -364,14 +376,14 @@ export const App: React.FC = () => {
 
   const [state, setState] = React.useState<ViewState>({
     loaded: false,
-    allSectors: [],
+    allSectorsByType: {industry: [], concept: [], region: []},
     sectorTypeMap: {},
     config: null,
     status: null,
     snapshot: null,
     seriesBySector: {},
   });
-  const [pickerSearch, setPickerSearch] = React.useState('');
+  const [modalOpen, setModalOpen] = React.useState(false);
   const [tableFilter, setTableFilter] = React.useState(loadTableFilter);
   const [sortState, setSortState] = React.useState<SortState>(loadSortState);
   const [colWidths, setColWidths] = React.useState<Record<string, number>>({});
@@ -425,37 +437,31 @@ export const App: React.FC = () => {
     let unsubAlert: (() => void) | null = null;
 
     const init = async () => {
-      const [cfg, status, snap, sectorsWithType, hotSectors] = await Promise.all([
+      const [cfg, status, snap, sectorsWithType, hotSectors, allFromStore] = await Promise.all([
         api.getConfig(),
         api.getCollectorStatus(),
         api.getLatestSnapshot(),
         api.listAllSectorsWithType(),
         api.getHotSectors(),
+        api.getAllSectorsFromStore(),
       ]);
-      // Fetch ALL sector types in parallel to build complete sector list + type map
-      const currentType = cfg?.sectorType ?? 'industry';
-      const allTypes: SectorType[] = ['industry', 'concept', 'region'];
-      const [industrySectors, conceptSectors, regionSectors] = await Promise.all(
-        allTypes.map((t) => api.getAllSectorsForType(t))
-      );
-      const allSectorsByType: Record<SectorType, string[]> = {
-        industry: industrySectors,
-        concept: conceptSectors,
-        region: regionSectors,
-      };
-      // allSectors for picker = current type only (when user filters by type)
-      const allSectors = allSectorsByType[currentType] ?? [];
-      // allSectorsCombined for validation = all types (so cross-type defaults aren't filtered out)
-      const allSectorsCombined = [...industrySectors, ...conceptSectors, ...regionSectors];
 
-      // Build sectorTypeMap from API data (complete, not snapshot-dependent)
+      const allSectorsByType: Record<SectorType, string[]> = {
+        industry: [],
+        concept: [],
+        region: [],
+      };
+      for (const {name, sectorType} of allFromStore) {
+        allSectorsByType[sectorType].push(name);
+      }
+      const allSectorsCombined = [...allSectorsByType.industry, ...allSectorsByType.concept, ...allSectorsByType.region];
+
       const sectorTypeMap: Record<string, SectorType> = {};
       for (const [t, names] of Object.entries(allSectorsByType)) {
         for (const name of names) {
           sectorTypeMap[name] = t as SectorType;
         }
       }
-      // Also merge from snapshot-based sectorsWithType (may have additional entries)
       for (const {name, sectorType} of sectorsWithType) {
         if (!sectorTypeMap[name]) {
           sectorTypeMap[name] = sectorType;
@@ -468,47 +474,32 @@ export const App: React.FC = () => {
       }
 
       let resolvedCfg = cfg;
+      const hotSet = new Set(hotSectors);
 
-      // Step 1: Validate selected sectors against ALL types' sector list combined,
-      // so cross-type default sectors (e.g. concept sectors in industry mode)
-      // are NOT incorrectly filtered out. Uses resolvedCfg so recovery below
-      // isn't overwritten.
-      if (cfg && allSectorsCombined.length > 0) {
+      // Always include EVERY hot sector, unconditionally.
+      // Then validate only non-hot (user-added) sectors against the API.
+      // This ensures hot sectors survive even when the API occasionally
+      // omits them.
+      let finalSelected = [...resolvedCfg.selectedSectors];
+      for (const h of hotSectors) {
+        if (!finalSelected.includes(h)) finalSelected.push(h);
+      }
+      if (allSectorsCombined.length > 0) {
         const allow = new Set(allSectorsCombined);
-        const validSelected = resolvedCfg.selectedSectors.filter((n) => allow.has(n));
-        if (validSelected.length !== resolvedCfg.selectedSectors.length) {
-          resolvedCfg = {...resolvedCfg, selectedSectors: validSelected};
-          await api.setConfig(resolvedCfg);
-        }
-
-        // Empty selection → populate with valid hot sectors that exist in full list
-        if (resolvedCfg.selectedSectors.length === 0) {
-          const hotInAll = hotSectors.filter((h) => allSectorsCombined.includes(h));
-          if (hotInAll.length > 0) {
-            resolvedCfg = {...resolvedCfg, selectedSectors: hotInAll};
-            await api.setConfig(resolvedCfg);
-          }
-        }
+        finalSelected = finalSelected.filter((n) => hotSet.has(n) || allow.has(n));
       }
 
-      // Step 2: Restore any missing hot sectors that were lost during previous
-      // field-ID-bug sessions, while preserving user-added custom sectors.
-      if (cfg && allSectorsCombined.length > 0) {
-        const existingSet = new Set(resolvedCfg.selectedSectors);
-        const missingHot = hotSectors.filter((h) => !existingSet.has(h) && allSectorsCombined.includes(h));
-        if (missingHot.length > 0) {
-          resolvedCfg = {
-            ...resolvedCfg,
-            selectedSectors: [...resolvedCfg.selectedSectors, ...missingHot],
-          };
-          await api.setConfig(resolvedCfg);
-        }
+      const oldSet = new Set(resolvedCfg.selectedSectors);
+      const newSet = new Set(finalSelected);
+      if (oldSet.size !== newSet.size || [...oldSet].some((s) => !newSet.has(s))) {
+        resolvedCfg = {...resolvedCfg, selectedSectors: finalSelected};
+        await api.setConfig(resolvedCfg);
       }
 
       setState((s) => ({
         ...s,
         loaded: true,
-        allSectors,
+        allSectorsByType,
         sectorTypeMap,
         config: resolvedCfg,
         status,
@@ -612,12 +603,6 @@ export const App: React.FC = () => {
     );
   }, [cfg?.selectedSectors, sectorTypeMap]);
 
-  const pickerOptions = React.useMemo(() => {
-    const q = pickerSearch.trim();
-    if (!q) return state.allSectors;
-    return state.allSectors.filter((n) => n.includes(q)).slice(0, 5);
-  }, [pickerSearch, state.allSectors]);
-
   const allRows = React.useMemo(() => buildRows(snapshot, state.seriesBySector), [snapshot, state.seriesBySector]);
   const filteredRows = React.useMemo(() => {
     const selectedSectors = cfg?.selectedSectors ?? [];
@@ -668,40 +653,6 @@ export const App: React.FC = () => {
     const nextCfg: TickConfig = {...cfg, intervalSec: normalizeIntervalSec(v)};
     await api.setConfig(nextCfg);
     setState((s) => ({...s, config: nextCfg}));
-  };
-
-  const onSectorTypeChange = async (t: SectorType) => {
-    if (!cfg) return;
-    const nextCfg: TickConfig = {...cfg, sectorType: t};
-    await api.setConfig(nextCfg);
-    // Fetch current type's sector list for the picker
-    const [currentSectors, sectorsWithType] = await Promise.all([
-      api.getAllSectorsForType(t),
-      api.listAllSectorsWithType(),
-    ]);
-    // Merge new type's sectors into existing sectorTypeMap (don't replace)
-    const currentTypeSectors = currentSectors;
-    setState((s) => {
-      const nextTypeMap = {...s.sectorTypeMap};
-      // All sectors from API for this type are guaranteed to be this type
-      for (const name of currentTypeSectors) {
-        if (!nextTypeMap[name]) {
-          nextTypeMap[name] = t;
-        }
-      }
-      // Also merge from snapshot data
-      for (const {name, sectorType} of sectorsWithType) {
-        if (!nextTypeMap[name]) {
-          nextTypeMap[name] = sectorType;
-        }
-      }
-      return {
-        ...s,
-        config: nextCfg,
-        allSectors: currentTypeSectors,
-        sectorTypeMap: nextTypeMap,
-      };
-    });
   };
 
   const onStart = async () => {
@@ -875,19 +826,27 @@ export const App: React.FC = () => {
         setTheme((t) => t === 'dark' ? 'light' : 'dark');
       } else if (e.key === 't' || e.key === 'T') {
         api.toggleAlwaysOnTop().then(setAlwaysOnTop).catch(() => {});
-      } else if (e.key === '1') {
-        onSectorTypeChange('industry');
-      } else if (e.key === '2') {
-        onSectorTypeChange('concept');
-      } else if (e.key === '3') {
-        onSectorTypeChange('region');
+      } else if (e.key === '1' || e.key === '2' || e.key === '3') {
+        setModalOpen(true);
       } else if (e.key === 'Escape') {
+        setModalOpen(false);
         setDetailSector(null);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [state.status?.state]);
+
+  const handleRefreshSectors = React.useCallback(async () => {
+    const allFromStore = await api.refreshSectorsFromStore();
+    const allSectorsByType: Record<SectorType, string[]> = {industry: [], concept: [], region: []};
+    const sectorTypeMap: Record<string, SectorType> = {};
+    for (const {name, sectorType} of allFromStore) {
+      allSectorsByType[sectorType].push(name);
+      sectorTypeMap[name] = sectorType;
+    }
+    setState((s) => ({...s, allSectorsByType, sectorTypeMap}));
+  }, []);
 
   if (!state.loaded) {
     return (
@@ -1119,16 +1078,31 @@ export const App: React.FC = () => {
             </div>
 
             <div style={{marginBottom: 12, flexShrink: 0}}>
-              <div style={labelStyle}>板块类型</div>
-              <select
-                value={(cfg?.sectorType ?? 'industry') as SectorType}
-                onChange={(e) => onSectorTypeChange(e.target.value as SectorType)}
-                style={inputStyle}
+              <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between'}}>
+                <span style={labelStyle}>选择板块</span>
+                <span style={{fontSize: 11, color: C.textMuted}}>
+                  {cfg ? `${cfg.selectedSectors.length} 已选` : '—'}
+                </span>
+              </div>
+              <div
+                onClick={() => setModalOpen(true)}
+                style={{
+                  ...inputStyle,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  userSelect: 'none',
+                  marginBottom: 0,
+                }}
               >
-                <option value="industry">行业板块</option>
-                <option value="concept">概念板块</option>
-                <option value="region">地域板块</option>
-              </select>
+                <span style={{color: C.textSec, fontSize: 13}}>
+                  点击选择板块
+                </span>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M6 9l6 6 6-6"/>
+                </svg>
+              </div>
             </div>
 
             <div style={{marginBottom: 12, flexShrink: 0}}>
@@ -1168,160 +1142,114 @@ export const App: React.FC = () => {
               )}
             </div>
 
-            <div style={{flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
-              <div style={{fontSize: 12, color: C.textSec}}>采集板块（{cfg ? sectorTypeLabel(cfg.sectorType) : '—'}）</div>
-              <div style={{fontSize: 12, color: C.textSec, display: 'flex', gap: 8, alignItems: 'center'}}>
-                <span style={{color: C.textSec}}>{cfg ? `${cfg.selectedSectors.length} 已选` : '—'}</span>
-                {cfg ? (
+            {cfg?.selectedSectors.length > 0 || chartSectors.size > 0 ? (
+              <div style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 4, borderTop: C.border, paddingTop: 10, marginBottom: 10}}>
+                {cfg && cfg.selectedSectors.length > 0 && (
                   <>
-                    <span onClick={() => {
-                      const targets = pickerSearch.trim() ? pickerOptions : state.allSectors;
-                      const nextCfg = {...cfg, selectedSectors: Array.from(targets)};
-                      api.setConfig(nextCfg);
-                      setState((s) => ({...s, config: nextCfg}));
-                    }} style={{cursor: 'pointer', color: C.cyan}} title={pickerSearch.trim() ? '全选搜索结果' : '全选当前板块类型下所有板块'}>全选</span>
-                    <span onClick={() => {
-                      const nextCfg = {...cfg, selectedSectors: []};
-                      api.setConfig(nextCfg);
-                      setState((s) => ({...s, config: nextCfg}));
-                    }} style={{cursor: 'pointer', color: C.textSec}} title="清空所有已选板块">清空</span>
-                  </>
-                ) : null}
-              </div>
-            </div>
-            <input value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder="筛选板块..." style={{...inputStyle, marginBottom: 10, flexShrink: 0}} />
-            <div style={{maxHeight: 200, overflowY: 'auto', flexShrink: 0, display: 'grid', gap: 5, paddingRight: 4}}>
-              {pickerOptions.map((name) => (
-                <div
-                  key={name}
-                  onClick={() => onToggleSector(name)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    padding: '7px 10px',
-                    borderRadius: C.radiusXs,
-                    border: selectedSet.has(name) ? `1px solid ${C.cyan}44` : C.border,
-                    background: selectedSet.has(name) ? `${C.cyan}0D` : 'transparent',
-                    cursor: 'pointer',
-                    transition: C.transition,
-                  }}
-                >
-                  <div style={{width: 14, height: 14, borderRadius: 4, border: selectedSet.has(name) ? `2px solid ${C.cyan}` : `2px solid ${C.textMuted}44`, display: 'flex', alignItems: 'center', justifyContent: 'center', background: selectedSet.has(name) ? C.cyan : 'transparent', transition: C.transition}}>
-                    {selectedSet.has(name) && <svg width="8" height="8" viewBox="0 0 8 8" fill="none"><path d="M1.5 4L3.5 6L6.5 1.5" stroke="#05080F" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                  </div>
-                  <span style={{fontSize: 13, color: selectedSet.has(name) ? C.text : C.textSec}}>{name}</span>
-                </div>
-              ))}
-            </div>
-
-            {cfg && cfg.selectedSectors.length > 0 && (
-              <div style={{marginTop: 12, borderTop: C.border, paddingTop: 12, flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
-                <div style={{flexShrink: 0, fontSize: 11, color: C.textMuted, marginBottom: 8, letterSpacing: '0.04em'}}>
-                  已选板块 · {cfg.selectedSectors.length}
-                </div>
-                <div style={{flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden'}}>
-                  <div style={{flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 4}}>
-                    {sectorGroups.map(({type, names}) => (
-                      <div key={type} style={{marginBottom: 10}}>
-                        <div style={{fontSize: 10, color: C.textMuted, letterSpacing: '0.04em', marginBottom: 6, padding: '0 2px'}}>
-                          {sectorTypeLabel(type)} · {names.length}
-                        </div>
-                        <div style={{display: 'flex', flexWrap: 'wrap', gap: 5}}>
-                          {names.map((name) => {
-                            const t = sectorTypeMap[name];
-                            const chipColor = t === 'concept' ? C.purple : t === 'region' ? C.teal : C.cyan;
-                            const chipBg = t === 'concept' || t === 'region' ? `${chipColor}18` : `${chipColor}12`;
-                            return (
-                              <div
-                                key={name}
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 3,
-                                  fontSize: 12,
-                                  padding: '3px 7px',
-                                  borderRadius: 6,
-                                  border: `1px solid ${chipColor}33`,
-                                  background: chipBg,
-                                  color: chipColor,
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                <span
-                                onClick={() => toggleChartSector(name)}
-                                style={{cursor: 'pointer', fontWeight: chartSectors.has(name) ? 700 : 400, color: chartSectors.has(name) ? C.cyan : chipColor}}
-                                title={chartSectors.has(name) ? '移出对比' : '加入对比'}
-                              >{name}</span>
-                                <button
-                                  onClick={() => onToggleSector(name)}
-                                  style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    padding: 0,
-                                    width: 14,
-                                    height: 14,
-                                    borderRadius: 4,
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    cursor: 'pointer',
-                                    color: C.textMuted,
-                                    fontSize: 12,
-                                    lineHeight: 1,
-                                    transition: C.transition,
-                                  }}
-                                >
-                                  ×
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {chartSectors.size > 0 && (() => {
-                    const multiSeries: MultiSeries[] = [];
-                    const colorList = ['#F87171', '#4ADE80', '#60A5FA', '#FBBF24', '#A78BFA', '#FB923C', '#34D399', '#38BDF8'];
-                    let ci = 0;
-                    for (const name of chartSectors) {
-                      const data = state.seriesBySector[name];
-                      if (data && data.length > 0) {
-                        multiSeries.push({name, data, color: colorList[ci % colorList.length]});
-                        ci++;
-                      }
-                    }
-                    if (multiSeries.length === 0) return null;
-                    return (
-                      <div style={{flexShrink: 0, borderTop: C.border, marginTop: 8, paddingTop: 10}}>
-                        <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
-                          <div style={{fontSize: 12, fontWeight: 600, color: C.text}}>
-                            {multiSeries.length} 个板块走势对比
+                    <div style={{fontSize: 10, color: C.textMuted, letterSpacing: '0.04em', flexShrink: 0}}>
+                      已选板块 · {cfg.selectedSectors.length}
+                    </div>
+                    <div style={{flex: 1, minHeight: 0, overflowY: 'auto', paddingRight: 2}}>
+                      {sectorGroups.map(({type, names}) => {
+                        const typeColor = type === 'concept' ? C.purple : type === 'region' ? C.teal : C.cyan;
+                        const typeLabel = type === 'concept' ? '概念' : type === 'region' ? '地域' : '行业';
+                        return (
+                          <div key={type} style={{marginBottom: 6}}>
+                            <div style={{fontSize: 10, color: typeColor, marginBottom: 3, fontWeight: 600}}>
+                              {typeLabel}板块 · {names.length}
+                            </div>
+                            <div style={{display: 'flex', flexWrap: 'wrap', gap: 3}}>
+                              {names.map((name) => {
+                                const t = sectorTypeMap[name];
+                                const chipColor = t === 'concept' ? C.purple : t === 'region' ? C.teal : C.cyan;
+                                const chipBg = t === 'concept' || t === 'region' ? `${chipColor}18` : `${chipColor}12`;
+                                return (
+                                  <div
+                                    key={name}
+                                    style={{
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: 2,
+                                      fontSize: 11,
+                                      padding: '2px 6px',
+                                      borderRadius: 5,
+                                      border: `1px solid ${chipColor}33`,
+                                      background: chipBg,
+                                      color: chipColor,
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    <span
+                                      onClick={() => toggleChartSector(name)}
+                                      style={{cursor: 'pointer', fontWeight: chartSectors.has(name) ? 700 : 400, color: chartSectors.has(name) ? C.cyan : chipColor}}
+                                      title={chartSectors.has(name) ? '移出对比' : '加入对比'}
+                                    >{name}</span>
+                                    <button
+                                      onClick={() => onToggleSector(name)}
+                                      style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        padding: 0,
+                                        width: 12,
+                                        height: 12,
+                                        borderRadius: 3,
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        cursor: 'pointer',
+                                        color: C.textMuted,
+                                        fontSize: 11,
+                                        lineHeight: 1,
+                                        transition: C.transition,
+                                      }}
+                                    >×</button>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                          <button
-                            onClick={() => setChartSectors(new Set())}
-                            style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 12, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
-                          >清除</button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+                {chartSectors.size > 0 && (() => {
+                  const multiSeries: MultiSeries[] = [];
+                  const colorList = ['#F87171', '#4ADE80', '#60A5FA', '#FBBF24', '#A78BFA', '#FB923C', '#34D399', '#38BDF8'];
+                  let ci = 0;
+                  for (const name of chartSectors) {
+                    const data = state.seriesBySector[name];
+                    if (data && data.length > 0) {
+                      multiSeries.push({name, data, color: colorList[ci % colorList.length]});
+                      ci++;
+                    }
+                  }
+                  if (multiSeries.length === 0) return null;
+                  return (
+                    <div style={{flexShrink: 0}}>
+                      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6}}>
+                        <div style={{fontSize: 12, fontWeight: 600, color: C.text}}>
+                          {multiSeries.length} 个板块走势对比
                         </div>
-                        <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4}}>
-                          {multiSeries.map((m) => (
-                            <span key={m.name} style={{fontSize: 11, color: m.color, display: 'flex', alignItems: 'center', gap: 3}}>
-                              <span style={{width: 8, height: 8, borderRadius: '50%', background: m.color, display: 'inline-block'}} />
-                              {m.name}
-                            </span>
-                          ))}
-                        </div>
-                        <div style={{height: 140}}>
-                          <TrendChart series={multiSeries} viewWidth={300} viewHeight={140} />
-                        </div>
+                        <button
+                          onClick={() => setChartSectors(new Set())}
+                          style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 12, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
+                        >清除</button>
                       </div>
-                    );
-                  })()}
-                </div>
+                      <div style={{display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 4}}>
+                        {multiSeries.map((m) => (
+                          <span key={m.name} style={{fontSize: 11, color: m.color, display: 'flex', alignItems: 'center', gap: 3}}>
+                            <span style={{width: 8, height: 8, borderRadius: '50%', background: m.color, display: 'inline-block'}} />
+                            {m.name}
+                          </span>
+                        ))}
+                      </div>
+                      <TrendChart series={multiSeries} />
+                    </div>
+                  );
+                })()}
               </div>
-            )}
+            ) : <div style={{flex: 1, minHeight: 0}} />}
           </div>
         </div>
 
@@ -1785,9 +1713,27 @@ export const App: React.FC = () => {
                   {sectorTypeLabel(detailSector.sectorType)}
                 </span>
               </div>
-              <button onClick={() => setDetailSector(null)}
-                style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 18, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
-              >×</button>
+              <div style={{display: 'flex', gap: 4, alignItems: 'center'}}>
+                <button
+                  title="刷新"
+                  onClick={() => {
+                    const s = state.snapshot?.sectors.find((x) => x.name === detailSector.name);
+                    if (s) setDetailSector(s);
+                  }}
+                  style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 16, width: 28, height: 28, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', transition: C.transition, opacity: 0.6}}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = C.surfaceHover; e.currentTarget.style.opacity = '1'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.opacity = '0.6'; }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <polyline points="1 20 1 14 7 14"/>
+                    <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+                  </svg>
+                </button>
+                <button onClick={() => setDetailSector(null)}
+                  style={{background: 'transparent', border: 'none', color: C.textMuted, cursor: 'pointer', fontSize: 18, padding: '2px 6px', borderRadius: 4, lineHeight: 1}}
+                >×</button>
+              </div>
             </div>
             <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 24px'}}>
               {[
@@ -1823,6 +1769,29 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+      {modalOpen && state.loaded && cfg && (
+        <SectorSelectorModal
+          allSectorsByType={state.allSectorsByType}
+          selectedSectors={new Set(cfg.selectedSectors)}
+          onToggleSector={(name: string) => {
+            const next = new Set(cfg.selectedSectors);
+            if (next.has(name)) next.delete(name); else next.add(name);
+            const nextCfg = {...cfg, selectedSectors: Array.from(next)};
+            api.setConfig(nextCfg);
+            setState((s) => ({...s, config: nextCfg}));
+          }}
+          onSelectAll={(names: string[]) => {
+            const next = new Set(cfg.selectedSectors);
+            for (const n of names) next.add(n);
+            const nextCfg = {...cfg, selectedSectors: Array.from(next)};
+            api.setConfig(nextCfg);
+            setState((s) => ({...s, config: nextCfg}));
+          }}
+          onClose={() => setModalOpen(false)}
+          onRefresh={handleRefreshSectors}
+          theme={C}
+        />
       )}
     </div>
   );
